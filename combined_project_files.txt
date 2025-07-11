@@ -1,0 +1,2197 @@
+
+--- START FILE: backend_app.py ---
+
+# backend_app.py
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import os
+from datetime import datetime, timedelta
+import pandas as pd
+import pytz
+import numpy as np # Import numpy to handle NaN values
+
+# Import your existing modules
+from btc_data import fetch_ohlcv, add_technical_indicators, get_current_price
+from sentiment import get_bitcoin_sentiment
+from probo_strategy import interpret_market_conditions
+from predictor import recommend_probo_vote_for_target
+from telegram_bot import send_telegram_alert
+
+app = Flask(__name__)
+# Enable CORS for your frontend to access the API
+CORS(app)
+
+# Global data storage (for simplicity, in a real app consider a database or caching)
+market_data_df = None
+current_btc_price = 0.0
+bitcoin_sentiment_score = 0.0
+market_conditions = {}
+
+def load_initial_data():
+    """Fetches and processes initial market data and sentiment."""
+    global market_data_df, current_btc_price, bitcoin_sentiment_score, market_conditions
+    try:
+        print("Fetching OHLCV data...")
+        df = fetch_ohlcv()
+        if df.empty:
+            print("Failed to fetch OHLCV data or data is empty. Setting defaults.")
+            market_data_df = pd.DataFrame()
+            current_btc_price = 0.0
+            bitcoin_sentiment_score = 0.0
+            market_conditions = {
+                "bullish_trend": False, "oversold": False, "overbought": False,
+                "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0
+            }
+            return
+        
+        print("Adding technical indicators...")
+        df = add_technical_indicators(df)
+        market_data_df = df
+
+        print("Getting current price...")
+        current_btc_price = get_current_price()
+
+        print("Getting Bitcoin sentiment...")
+        bitcoin_sentiment_score = get_bitcoin_sentiment()
+
+        print("Interpreting market conditions...")
+        market_conditions = interpret_market_conditions(market_data_df)
+        print("Data loaded successfully.")
+    except Exception as e:
+        print(f"Error loading initial data: {e}")
+        market_data_df = pd.DataFrame()
+        current_btc_price = 0.0
+        bitcoin_sentiment_score = 0.0
+        market_conditions = {
+            "bullish_trend": False, "oversold": False, "overbought": False,
+            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0
+        }
+
+# Load data when the Flask app starts
+with app.app_context():
+    load_initial_data()
+
+# API Endpoint to get current market data
+@app.route('/api/market_data', methods=['GET'])
+def get_market_data():
+    global market_data_df, current_btc_price, bitcoin_sentiment_score, market_conditions
+    load_initial_data() # Always refresh data for real-time feel
+
+    if market_data_df is None or market_data_df.empty:
+        return jsonify({"error": "Market data not available or failed to load"}), 500
+
+    # Convert DataFrame to JSON serializable format
+    # Fill NaN values with None before converting to dictionary
+    chart_data_df = market_data_df[['open', 'high', 'low', 'close', 'EMA_20', 'EMA_50']].reset_index()
+    chart_data_df = chart_data_df.replace({np.nan: None}) # Replace NaN with None for JSON serialization
+    chart_data = chart_data_df.to_dict(orient='records')
+
+    for item in chart_data:
+        # Ensure timestamp is converted to string, handling potential NaT (Not a Time)
+        item['timestamp'] = item['timestamp'].isoformat() if pd.notna(item['timestamp']) else None
+
+    response_data = {
+        "current_price": current_btc_price,
+        "sentiment_score": bitcoin_sentiment_score,
+        "market_conditions": market_conditions,
+        "chart_data": chart_data
+    }
+    return jsonify(response_data)
+
+# API Endpoint for prediction
+@app.route('/api/predict', methods=['POST'])
+def predict_outcome():
+    data = request.get_json()
+    target_price = data.get('target_price')
+    target_time_str = data.get('target_time') # HH:MM in IST
+
+    if not target_price or not target_time_str:
+        return jsonify({"error": "Missing target_price or target_time"}), 400
+
+    load_initial_data() # Ensure market data is loaded and fresh
+
+    if market_data_df is None or market_data_df.empty:
+        return jsonify({"error": "Market data not available for prediction"}), 500
+
+    try:
+        ist_timezone = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist_timezone)
+        target_time_only = datetime.strptime(target_time_str, "%H:%M").time()
+        target_datetime_ist = now_ist.replace(hour=target_time_only.hour, minute=target_time_only.minute, second=0, microsecond=0)
+
+        if target_datetime_ist < now_ist:
+            target_datetime_ist += timedelta(days=1)
+
+        target_datetime_utc = target_datetime_ist.astimezone(pytz.utc)
+        hours_remaining = (target_datetime_utc - datetime.utcnow().replace(tzinfo=pytz.utc)).total_seconds() / 3600
+        hours_remaining = max(0.25, round(hours_remaining, 2))
+
+        result = recommend_probo_vote_for_target(
+            df=market_data_df,
+            current_price=current_btc_price,
+            sentiment_score=bitcoin_sentiment_score,
+            target_price=target_price,
+            target_time_str=target_datetime_utc.strftime("%H:%M")
+        )
+        result['hours_remaining'] = hours_remaining
+        result['target_time'] = target_time_str # Keep original IST string for frontend display
+
+        trust_signals = 0
+        caution_flags = 0
+
+        hours_remaining_float = result['hours_remaining']
+        sentiment_score = result['sentiment']
+
+        # Evaluate Trust Conditions
+        if hours_remaining_float < 2: trust_signals += 1
+        if market_conditions['bullish_trend'] or (market_conditions['ema_20'] is not None and market_conditions['ema_50'] is not None and market_conditions['ema_20'] < market_conditions['ema_50'] and current_btc_price < market_conditions['ema_20']): trust_signals += 1
+        if abs(sentiment_score) > 0.2: trust_signals += 1
+        if market_conditions['rsi'] is not None and 30 <= market_conditions['rsi'] <= 70: trust_signals += 1
+
+        # Evaluate Caution Conditions
+        if hours_remaining_float > 3: caution_flags += 1
+        if market_conditions['overbought'] or market_conditions['oversold']: caution_flags += 1
+        if abs(sentiment_score) < 0.05: caution_flags += 1
+
+        if trust_signals >= 3 and caution_flags < 2:
+            advice_message = "🔐 Confidence: *GO with the vote!* (Trust: {}/4, Caution: {}/3)".format(trust_signals, caution_flags)
+        elif caution_flags >= 2:
+            advice_message = "🔐 Confidence: *SKIP the trade or WAIT!* (Trust: {}/4, Caution: {}/3)".format(trust_signals, caution_flags)
+        else:
+            advice_message = "🔐 Confidence: *Proceed with caution or wait for clearer signals.* (Trust: {}/4, Caution: {}/3)".format(trust_signals, caution_flags)
+
+        result['confidence_advisor'] = {
+            'trust_signals_count': trust_signals,
+            'caution_flags_count': caution_flags,
+            'advice_message': advice_message,
+            'trust_conditions': {
+                'time_expiry_lt_2hr': hours_remaining_float < 2,
+                'trending_cleanly': bool(market_conditions['bullish_trend'] or (market_conditions['ema_20'] is not None and market_conditions['ema_50'] is not None and market_conditions['ema_20'] < market_conditions['ema_50'] and current_btc_price < market_conditions['ema_20'])),
+                'sentiment_strong': abs(sentiment_score) > 0.2,
+                'rsi_neutral': bool(market_conditions['rsi'] is not None and 30 <= market_conditions['rsi'] <= 70)
+            },
+            'caution_conditions': {
+                'target_time_gt_3hr': hours_remaining_float > 3,
+                'rsi_extreme': bool(market_conditions['overbought'] or market_conditions['oversold']),
+                'sentiment_conflicting': abs(sentiment_score) < 0.05
+            }
+        }
+
+        alert_message = (
+            f"📣 *BTC Probo Vote Recommendation*\n"
+            f"🕒 Target Time (IST): *{target_time_str}*\n"
+            f"🎯 Target Price: *${result['target_price']}*\n"
+            f"💰 Current: *${result['current_price']:.2f}*\n"
+            f"📈 Projected: *${result['projected_price']:.2f}*\n"
+            f"💬 Sentiment: *{result['sentiment']:.2f}*\n"
+            f"✅ Vote: *{result['vote']}*\n"
+            f"\n--- Confidence Advisor ---\n"
+            f"{advice_message}"
+        )
+        send_telegram_alert(alert_message)
+
+        return jsonify(result)
+    except ValueError as ve:
+        return jsonify({"error": f"Invalid input or time format: {ve}"}), 400
+    except Exception as e:
+        print(f"An error occurred during prediction: {e}")
+        return jsonify({"error": f"An internal server error occurred during prediction: {e}"}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+
+--- END FILE: backend_app.py ---
+
+--- START FILE: btc_data.py ---
+
+# btc_data.py
+
+import requests
+import pandas as pd
+import time
+from ta.momentum import RSIIndicator
+from ta.trend import EMAIndicator
+
+BINANCE_BASE_URL = "https://api.binance.com"
+
+def fetch_ohlcv(symbol="BTCUSDT", interval="1h", limit=100):
+    """
+    Fetches OHLCV (Open, High, Low, Close, Volume) data from Binance.
+
+    Args:
+        symbol (str): The trading pair symbol (e.g., "BTCUSDT").
+        interval (str): The candlestick interval (e.g., "1h", "4h", "1d").
+        limit (int): The number of data points to fetch.
+
+    Returns:
+        pandas.DataFrame: DataFrame containing OHLCV data with timestamp as index.
+                          Returns an empty DataFrame on failure.
+    """
+    url = f"{BINANCE_BASE_URL}/api/v3/klines"
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10) # Add timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+
+        if not data:
+            print(f"No data received for {symbol} with interval {interval}.")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data, columns=[
+            "timestamp", "open", "high", "low", "close", "volume",
+            "close_time", "quote_asset_volume", "num_trades",
+            "taker_buy_base_vol", "taker_buy_quote_vol", "ignore"
+        ])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("timestamp", inplace=True)
+        # Convert relevant columns to numeric, coercing errors to NaN
+        df["open"] = pd.to_numeric(df["open"], errors='coerce')
+        df["high"] = pd.to_numeric(df["high"], errors='coerce')
+        df["low"] = pd.to_numeric(df["low"], errors='coerce')
+        df["close"] = pd.to_numeric(df["close"], errors='coerce')
+        df["volume"] = pd.to_numeric(df["volume"], errors='coerce')
+        
+        # Drop rows with any NaN values that resulted from coercion
+        df.dropna(subset=["open", "high", "low", "close", "volume"], inplace=True)
+
+        return df[["open", "high", "low", "close", "volume"]]
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching OHLCV data from Binance: {e}")
+        return pd.DataFrame()
+    except ValueError as e:
+        print(f"Error parsing JSON data from Binance: {e}")
+        return pd.DataFrame()
+    except Exception as e:
+        print(f"An unexpected error occurred in fetch_ohlcv: {e}")
+        return pd.DataFrame()
+
+def add_technical_indicators(df):
+    """
+    Adds Relative Strength Index (RSI), EMA 20, and EMA 50 to the DataFrame.
+
+    Args:
+        df (pandas.DataFrame): DataFrame with 'close' prices.
+
+    Returns:
+        pandas.DataFrame: DataFrame with added technical indicator columns.
+    """
+    if df.empty or 'close' not in df.columns:
+        print("DataFrame is empty or missing 'close' column for indicator calculation.")
+        return df
+
+    # Ensure 'close' column is numeric
+    df['close'] = pd.to_numeric(df['close'], errors='coerce')
+    df.dropna(subset=['close'], inplace=True) # Drop rows where close price is not numeric
+
+    if df.empty: # Check again after dropping NaNs
+        return df
+
+    # Calculate RSI
+    # Ensure enough data points for RSI calculation (default window=14)
+    if len(df) >= 14:
+        rsi = RSIIndicator(df["close"], window=14).rsi()
+        df["RSI"] = rsi
+    else:
+        df["RSI"] = float('nan') # Not enough data for calculation
+
+    # Calculate EMA 20
+    # Ensure enough data points for EMA 20 calculation (default window=20)
+    if len(df) >= 20:
+        ema_20 = EMAIndicator(df["close"], window=20).ema_indicator()
+        df["EMA_20"] = ema_20
+    else:
+        df["EMA_20"] = float('nan')
+
+    # Calculate EMA 50
+    # Ensure enough data points for EMA 50 calculation (default window=50)
+    if len(df) >= 50:
+        ema_50 = EMAIndicator(df["close"], window=50).ema_indicator()
+        df["EMA_50"] = ema_50
+    else:
+        df["EMA_50"] = float('nan')
+
+    return df
+
+def get_current_price(symbol="BTCUSDT"):
+    """
+    Fetches the current price of a given symbol from Binance.
+
+    Args:
+        symbol (str): The trading pair symbol (e.g., "BTCUSDT").
+
+    Returns:
+        float: The current price. Returns 0.0 on failure.
+    """
+    url = f"{BINANCE_BASE_URL}/api/v3/ticker/price?symbol={symbol}"
+    try:
+        response = requests.get(url, timeout=5) # Add timeout
+        response.raise_for_status()
+        return float(response.json()["price"])
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching current price from Binance: {e}")
+        return 0.0
+    except (ValueError, KeyError) as e:
+        print(f"Error parsing current price data: {e}")
+        return 0.0
+    except Exception as e:
+        print(f"An unexpected error occurred in get_current_price: {e}")
+        return 0.0
+
+if __name__ == "__main__":
+    print("--- Testing btc_data.py ---")
+    df = fetch_ohlcv()
+    if not df.empty:
+        df = add_technical_indicators(df)
+        print("\nLast 5 OHLCV with Indicators:")
+        print(df.tail())
+    else:
+        print("Failed to fetch OHLCV data for testing.")
+
+    current_price = get_current_price()
+    print(f"\nCurrent BTC Price: ${current_price}")
+
+
+
+--- END FILE: btc_data.py ---
+
+--- START FILE: combined_project_files.txt ---
+
+
+--- START FILE: backend_app.py ---
+
+# backend_app.py
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import os
+from datetime import datetime, timedelta
+
+# Import your existing modules
+from btc_data import fetch_ohlcv, add_technical_indicators, get_current_price
+from sentiment import get_bitcoin_sentiment
+from probo_strategy import interpret_market_conditions
+from predictor import recommend_probo_vote_for_target
+from telegram_bot import send_telegram_alert # Ensure send_telegram_alert is correctly imported and configured
+
+app = Flask(__name__)
+# Enable CORS for your frontend to access the API
+CORS(app)
+
+# Global data storage (for simplicity, in a real app consider a database or caching)
+# This will be updated on each request to ensure fresh data
+market_data_df = None
+current_btc_price = 0
+bitcoin_sentiment_score = 0
+market_conditions = {}
+
+def load_initial_data():
+    """Fetches and processes initial market data and sentiment."""
+    global market_data_df, current_btc_price, bitcoin_sentiment_score, market_conditions
+    try:
+        print("Fetching OHLCV data...")
+        df = fetch_ohlcv()
+        if df.empty:
+            print("Failed to fetch OHLCV data or data is empty.")
+            return
+
+        print("Adding technical indicators...")
+        df = add_technical_indicators(df)
+        market_data_df = df
+
+        print("Getting current price...")
+        current_btc_price = get_current_price()
+
+        print("Getting Bitcoin sentiment...")
+        bitcoin_sentiment_score = get_bitcoin_sentiment()
+
+        print("Interpreting market conditions...")
+        market_conditions = interpret_market_conditions(market_data_df)
+        print("Data loaded successfully.")
+    except Exception as e:
+        print(f"Error loading initial data: {e}")
+        # In a production app, you might want more robust error handling
+        # and perhaps return a default/error state to the frontend.
+
+# Load data when the Flask app starts
+with app.app_context():
+    load_initial_data()
+
+# API Endpoint to get current market data
+@app.route('/api/market_data', methods=['GET'])
+def get_market_data():
+    global market_data_df, current_btc_price, bitcoin_sentiment_score, market_conditions
+    # Refresh data on each request for real-time feel (can be optimized with caching)
+    load_initial_data()
+
+    if market_data_df is None or market_data_df.empty:
+        return jsonify({"error": "Market data not available"}), 500
+
+    # Convert DataFrame to JSON serializable format
+    # Only send necessary data to avoid large payloads
+    chart_data = market_data_df[['open', 'high', 'low', 'close', 'EMA_20', 'EMA_50']].reset_index().to_dict(orient='records')
+    for item in chart_data:
+        item['timestamp'] = item['timestamp'].isoformat() # Convert datetime objects to string
+
+    response_data = {
+        "current_price": current_btc_price,
+        "sentiment_score": bitcoin_sentiment_score,
+        "market_conditions": market_conditions,
+        "chart_data": chart_data
+    }
+    return jsonify(response_data)
+
+# API Endpoint for prediction
+@app.route('/api/predict', methods=['POST'])
+def predict_outcome():
+    data = request.get_json()
+    target_price = data.get('target_price')
+    target_time_str = data.get('target_time') # HH:MM in IST
+
+    if not target_price or not target_time_str:
+        return jsonify({"error": "Missing target_price or target_time"}), 400
+
+    try:
+        # Convert IST time to UTC for the backend logic (as per your app.py)
+        ist_time = datetime.strptime(target_time_str.strip(), "%H:%M")
+        now_utc = datetime.utcnow()
+        today_ist = now_utc + timedelta(hours=5.5)
+        target_time_ist = today_ist.replace(hour=ist_time.hour, minute=ist_time.minute, second=0, microsecond=0)
+        target_time_utc = target_time_ist - timedelta(hours=5.5)
+        parsed_time_utc = target_time_utc.strftime("%H:%M")
+
+        # Use your existing prediction function
+        result = recommend_probo_vote_for_target(target_price, parsed_time_utc)
+
+        # Re-evaluate confidence advisor logic on the backend for consistency
+        # This part is duplicated from app.py, consider refactoring into a shared utility
+        trust_signals = 0
+        caution_flags = 0
+        advice_summary = []
+
+        hours_remaining_float = result['hours_remaining']
+        sentiment_score = result['sentiment']
+
+        # Evaluate Trust Conditions
+        if hours_remaining_float < 2:
+            trust_signals += 1
+        # Simplified trend check for backend, matching your app.py's logic
+        if market_conditions['bullish_trend'] or (market_conditions['ema_20'] < market_conditions['ema_50'] and market_data_df['close'].iloc[-1] < market_data_df['EMA_20'].iloc[-1]):
+            trust_signals += 1
+        if abs(sentiment_score) > 0.2:
+            trust_signals += 1
+        if 30 <= market_conditions['rsi'] <= 70:
+            trust_signals += 1
+
+        # Evaluate Caution Conditions
+        if hours_remaining_float > 3:
+            caution_flags += 1
+        if market_conditions['overbought'] or market_conditions['oversold']:
+            caution_flags += 1
+        if abs(sentiment_score) < 0.05:
+            caution_flags += 1
+
+        if trust_signals >= 3 and caution_flags < 2:
+            advice_message = "🔐 Confidence: *GO with the vote!* (Trust: {}/5, Caution: {}/5)".format(trust_signals, caution_flags)
+        elif caution_flags >= 2:
+            advice_message = "🔐 Confidence: *SKIP the trade or WAIT!* (Trust: {}/5, Caution: {}/5)".format(trust_signals, caution_flags)
+        else:
+            advice_message = "🔐 Confidence: *Proceed with caution or wait for clearer signals.* (Trust: {}/5, Caution: {}/5)".format(trust_signals, caution_flags)
+
+        result['confidence_advisor'] = {
+            'trust_signals_count': trust_signals,
+            'caution_flags_count': caution_flags,
+            'advice_message': advice_message,
+            'trust_conditions': {
+                'time_expiry_lt_2hr': hours_remaining_float < 2,
+                'trending_cleanly': market_conditions['bullish_trend'] or (market_conditions['ema_20'] < market_conditions['ema_50'] and market_data_df['close'].iloc[-1] < market_data_df['EMA_20'].iloc[-1]),
+                'sentiment_strong': abs(sentiment_score) > 0.2,
+                'rsi_neutral': 30 <= market_conditions['rsi'] <= 70
+            },
+            'caution_conditions': {
+                'target_time_gt_3hr': hours_remaining_float > 3,
+                'rsi_extreme': market_conditions['overbought'] or market_conditions['oversold'],
+                'sentiment_conflicting': abs(sentiment_score) < 0.05
+            }
+        }
+
+        # Send Telegram Alert
+        alert_message = (
+            f"📣 *BTC Probo Vote Recommendation*\n"
+            f"🕒 Target Time (IST): *{target_time_str}*\n"
+            f"🎯 Target Price: *${result['target_price']}*\n"
+            f"💰 Current: *${result['current_price']}*\n"
+            f"📈 Projected: *${result['projected_price']}*\n"
+            f"💬 Sentiment: *{result['sentiment']}*\n"
+            f"✅ Vote: *{result['vote']}*\n"
+            f"\n--- Confidence Advisor ---\n"
+            f"{advice_message}"
+        )
+        send_telegram_alert(alert_message) # This function is from your telegram_bot.py
+
+        return jsonify(result)
+    except ValueError as ve:
+        return jsonify({"error": f"Invalid input: {ve}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"An error occurred during prediction: {e}"}), 500
+
+if __name__ == '__main__':
+    # For local development, set the host and port
+    app.run(host='0.0.0.0', port=5000, debug=True) # debug=True for development
+
+--- END FILE: backend_app.py ---
+
+--- START FILE: btc_data.py ---
+
+# btc_data.py
+
+import requests
+import pandas as pd
+import time
+from ta.momentum import RSIIndicator
+from ta.trend import EMAIndicator
+
+BINANCE_BASE_URL = "https://api.binance.com"
+
+def fetch_ohlcv(symbol="BTCUSDT", interval="1h", limit=100):
+    url = f"{BINANCE_BASE_URL}/api/v3/klines"
+    params = {"symbol": symbol, "interval": interval, "limit": limit}
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    df = pd.DataFrame(data, columns=[
+        "timestamp", "open", "high", "low", "close", "volume",
+        "close_time", "quote_asset_volume", "num_trades",
+        "taker_buy_base_vol", "taker_buy_quote_vol", "ignore"
+    ])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df.set_index("timestamp", inplace=True)
+    df = df.astype(float)
+
+    return df[["open", "high", "low", "close", "volume"]]
+
+def add_technical_indicators(df):
+    rsi = RSIIndicator(df["close"], window=14).rsi()
+    ema_20 = EMAIndicator(df["close"], window=20).ema_indicator()
+    ema_50 = EMAIndicator(df["close"], window=50).ema_indicator()
+
+    df["RSI"] = rsi
+    df["EMA_20"] = ema_20
+    df["EMA_50"] = ema_50
+    return df
+
+def get_current_price(symbol="BTCUSDT"):
+    url = f"{BINANCE_BASE_URL}/api/v3/ticker/price?symbol={symbol}"
+    response = requests.get(url)
+    return float(response.json()["price"])
+
+if __name__ == "__main__":
+    df = fetch_ohlcv()
+    df = add_technical_indicators(df)
+    print(df.tail())
+    print(f"Current BTC Price: ${get_current_price()}")
+
+
+--- END FILE: btc_data.py ---
+
+--- START FILE: combine_project.py ---
+
+import os
+
+def combine_files_to_single_file(root_dir, output_filename="combined_project_files.txt"):
+    """
+    Combines the content of all files in a directory into a single file,
+    excluding 'node_modules' directories and 'package-lock.json' files.
+
+    Args:
+        root_dir (str): The root directory of the project.
+        output_filename (str): The name of the output file.
+    """
+    combined_content = []
+    excluded_dirs = ['node_modules', '.git', '.vscode', '.idea', 'dist', 'build']
+    excluded_files = ['package-lock.json', 'yarn.lock', 'bun.lockb', '.env'] # Added .env as it might contain sensitive info
+
+    print(f"Starting to combine files from: {root_dir}")
+    print(f"Excluding directories: {excluded_dirs}")
+    print(f"Excluding files: {excluded_files}")
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        # Modify dirnames in-place to skip excluded directories
+        dirnames[:] = [d for d in dirnames if d not in excluded_dirs]
+
+        for filename in filenames:
+            if filename in excluded_files:
+                print(f"Skipping excluded file: {os.path.join(dirpath, filename)}")
+                continue
+
+            file_path = os.path.join(dirpath, filename)
+            # Make path relative to root_dir for the header
+            relative_file_path = os.path.relpath(file_path, root_dir)
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                combined_content.append(f"\n--- START FILE: {relative_file_path} ---\n\n")
+                combined_content.append(content)
+                combined_content.append(f"\n\n--- END FILE: {relative_file_path} ---\n")
+                print(f"Included file: {relative_file_path}")
+            except UnicodeDecodeError:
+                print(f"Skipping binary or undecodable file (UnicodeDecodeError): {relative_file_path}")
+            except Exception as e:
+                print(f"Error reading file {relative_file_path}: {e}")
+
+    output_path = os.path.join(root_dir, output_filename)
+    try:
+        with open(output_path, 'w', encoding='utf-8') as outfile:
+            outfile.write("".join(combined_content))
+        print(f"\nSuccessfully combined all files into: {output_path}")
+    except Exception as e:
+        print(f"Error writing output file {output_path}: {e}")
+
+if __name__ == "__main__":
+    # Get the current working directory where the script is run
+    # This assumes you run the script from your project's root directory
+    project_root = os.getcwd()
+    combine_files_to_single_file(project_root)
+
+
+--- END FILE: combine_project.py ---
+
+--- START FILE: index.html ---
+
+<script>
+    // Helper function to toggle expander sections
+    function setupExpander(headerId, contentId) {
+        const header = document.getElementById(headerId);
+        const content = document.getElementById(contentId);
+        const arrow = header.querySelector('.arrow');
+
+        header.addEventListener('click', () => {
+            const isExpanded = content.classList.contains('expanded');
+            if (isExpanded) {
+                content.classList.remove('expanded');
+                arrow.classList.remove('expanded');
+            } else {
+                content.classList.add('expanded');
+                arrow.classList.add('expanded');
+            }
+        });
+    }
+
+    // Setup all expanders
+    setupExpander('prediction-summary-expander', 'prediction-summary-content');
+    setupExpander('technical-indicators-expander', 'technical-indicators-content');
+    setupExpander('chart-expander', 'chart-content');
+    setupExpander('trust-signals-expander', 'trust-signals-content');
+    setupExpander('caution-flags-expander', 'caution-flags-content');
+
+    // --- Backend API URL ---
+    // IMPORTANT: Replace this with the actual URL of your deployed Flask backend
+    // For local testing: 'http://localhost:5000'
+    const BACKEND_API_URL = 'http://localhost:5000'; // Change this to your deployed backend URL
+
+    let btcData = []; // Store processed data globally
+    let currentMarketConditions = {}; // Store market conditions globally
+
+    // --- UI Update Functions ---
+
+    function updateUI(currentPrice, sentimentScore, marketConditions, chartData, predictionResult = null) {
+        // Update Current Price Metric
+        document.getElementById('current-price-display').textContent = `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        // Update Technical Indicators
+        document.getElementById('metric-rsi').textContent = marketConditions.rsi ? marketConditions.rsi.toFixed(2) : 'N/A';
+        document.getElementById('metric-ema20').textContent = marketConditions.ema_20 ? marketConditions.ema_20.toFixed(2) : 'N/A';
+        document.getElementById('metric-ema50').textContent = marketConditions.ema_50 ? marketConditions.ema_50.toFixed(2) : 'N/A';
+        document.getElementById('market-trend').textContent = marketConditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
+        let rsiZone = '';
+        if (marketConditions.overbought) rsiZone = '🔥 Overbought';
+        else if (marketConditions.oversold) rsiZone = '🧊 Oversold';
+        else rsiZone = '✅ Neutral';
+        document.getElementById('market-rsi-zone').textContent = rsiZone;
+
+        // Update Chart
+        drawChart(chartData);
+
+        // Update Prediction Summary and Confidence Advisor if predictionResult is available
+        if (predictionResult) {
+            document.getElementById('summary-current-price').textContent = `$${predictionResult.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('summary-avg-delta').textContent = `$${predictionResult.avg_delta_per_hour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('summary-time-left').textContent = `${predictionResult.hours_remaining} hr(s)`;
+            document.getElementById('summary-projected-price').textContent = `$${predictionResult.projected_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('summary-sentiment-score').textContent = predictionResult.sentiment.toFixed(2);
+            document.getElementById('summary-target-time').textContent = predictionResult.target_time;
+
+            const voteMessageDiv = document.getElementById('recommended-vote-message');
+            voteMessageDiv.innerHTML = `<div class="success-message">🧠 Recommended Vote: <strong>${predictionResult.vote}</strong></div>`;
+            voteMessageDiv.classList.remove('hidden');
+
+            const confidence = predictionResult.confidence_advisor;
+            document.getElementById('trust-time').innerHTML = confidence.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+            document.getElementById('trust-trend').innerHTML = confidence.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
+            document.getElementById('trust-sentiment').innerHTML = confidence.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
+            document.getElementById('trust-rsi').innerHTML = confidence.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+
+            document.getElementById('caution-time').innerHTML = confidence.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+            document.getElementById('caution-rsi').innerHTML = confidence.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+            document.getElementById('caution-sentiment').innerHTML = confidence.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
+
+            document.getElementById('total-trust-signals').textContent = confidence.trust_signals_count;
+            document.getElementById('total-caution-flags').textContent = confidence.caution_flags_count;
+
+            const proTipMessageDiv = document.getElementById('pro-tip-message');
+            let proTipClass = '';
+            if (confidence.trust_signals_count >= 3 && confidence.caution_flags_count < 2) {
+                proTipClass = 'success-message';
+            } else if (confidence.caution_flags_count >= 2) {
+                proTipClass = 'warning-message';
+            } else {
+                proTipClass = 'info-message';
+            }
+            proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong>${confidence.advice_message}</strong></div>`;
+        }
+    }
+
+    // --- Charting with Plotly.js ---
+
+    function drawChart(chartData) {
+        const timestamps = chartData.map(d => d.timestamp);
+        const openPrices = chartData.map(d => d.open);
+        const highPrices = chartData.map(d => d.high);
+        const lowPrices = chartData.map(d => d.low);
+        const closePrices = chartData.map(d => d.close);
+        const ema20 = chartData.map(d => d.EMA_20);
+        const ema50 = chartData.map(d => d.EMA_50);
+
+        const traceCandles = {
+            x: timestamps,
+            open: openPrices,
+            high: highPrices,
+            low: lowPrices,
+            close: closePrices,
+            type: 'candlestick',
+            name: 'Candles',
+            increasing: { line: { color: '#48bb78' } }, // Green for increasing
+            decreasing: { line: { color: '#ef4444' } }  // Red for decreasing
+        };
+
+        const traceEMA20 = {
+            x: timestamps,
+            y: ema20,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'EMA 20',
+            line: { color: '#63b3ed', width: 1.5 }
+        };
+
+        const traceEMA50 = {
+            x: timestamps,
+            y: ema50,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'EMA 50',
+            line: { color: '#a78bfa', width: 1.5 }
+        };
+
+        const layout = {
+            xaxis: {
+                rangeslider: { visible: false },
+                type: 'date',
+                title: 'Time',
+                tickfont: { color: '#cbd5e1' },
+                gridcolor: '#4a5568',
+                linecolor: '#4a5568'
+            },
+            yaxis: {
+                title: 'Price (USDT)',
+                tickfont: { color: '#cbd5e1' },
+                gridcolor: '#4a5568',
+                linecolor: '#4a5568'
+            },
+            plot_bgcolor: '#2d3748', // Chart background
+            paper_bgcolor: '#2d3748', // Paper background
+            font: { color: '#e2e8f0' },
+            margin: { l: 40, r: 40, t: 30, b: 30 },
+            showlegend: true,
+            legend: {
+                x: 0, y: 1.15,
+                bgcolor: 'rgba(0,0,0,0)',
+                bordercolor: 'rgba(0,0,0,0)',
+                font: { color: '#e2e8f0' }
+            }
+        };
+
+        Plotly.newPlot('candlestick-chart', [traceCandles, traceEMA20, traceEMA50], layout, { responsive: true, displayModeBar: true });
+    }
+
+    // --- Main Application Logic ---
+
+    async function initializeApp() {
+        document.getElementById('current-price-display').textContent = "Loading...";
+        const messageDiv = document.getElementById('recommended-vote-message');
+        messageDiv.innerHTML = ''; // Clear previous messages
+        messageDiv.classList.add('hidden');
+
+        try {
+            const response = await fetch(`${BACKEND_API_URL}/api/market_data`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+
+            currentMarketConditions = data.market_conditions; // Store for later use
+            updateUI(data.current_price, data.sentiment_score, data.market_conditions, data.chart_data);
+
+        } catch (error) {
+            console.error("Error fetching market data:", error);
+            const messageDiv = document.getElementById('recommended-vote-message');
+            messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please check backend server.</div>`;
+            messageDiv.classList.remove('hidden');
+            document.getElementById('current-price-display').textContent = "$ERROR";
+        }
+    }
+
+    // Handle form submission
+    document.getElementById('prediction-form').addEventListener('submit', async (event) => {
+        event.preventDefault(); // Prevent default form submission
+
+        const targetPrice = parseFloat(document.getElementById('target-price').value);
+        const targetTimeStr = document.getElementById('target-time').value;
+
+        const messageDiv = document.getElementById('recommended-vote-message');
+        messageDiv.innerHTML = ''; // Clear previous messages
+        messageDiv.classList.add('hidden');
+        document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+
+        if (isNaN(targetPrice) || !targetTimeStr) {
+            messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
+            messageDiv.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${BACKEND_API_URL}/api/predict`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    target_price: targetPrice,
+                    target_time: targetTimeStr
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Prediction failed: ${errorData.error || response.statusText}`);
+            }
+
+            const predictionResult = await response.json();
+            // Re-fetch market data to ensure the UI is consistent with the latest backend state
+            const marketDataResponse = await fetch(`${BACKEND_API_URL}/api/market_data`);
+            const marketData = await marketDataResponse.json();
+
+            updateUI(marketData.current_price, marketData.sentiment_score, marketData.market_conditions, marketData.chart_data, predictionResult);
+
+        } catch (error) {
+            console.error("Error during prediction:", error);
+            messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
+            messageDiv.classList.remove('hidden');
+        }
+    });
+
+    // Initialize the app when the DOM is fully loaded
+    document.addEventListener('DOMContentLoaded', initializeApp);
+
+    // Periodically update market data (e.g., every 5 minutes)
+    setInterval(initializeApp, 300000); // 300000 ms = 5 minutes
+
+</script>
+
+--- END FILE: index.html ---
+
+--- START FILE: predictor.py ---
+
+# predictor.py
+
+from btc_data import fetch_ohlcv, add_technical_indicators, get_current_price
+from sentiment import get_bitcoin_sentiment
+import datetime
+
+def predict_future_price(hours_ahead=1):
+    df = fetch_ohlcv(interval="1h", limit=10)
+    df = add_technical_indicators(df)
+
+    # Calculate avg price movement per hour
+    df["price_change"] = df["close"].diff()
+    avg_delta = df["price_change"].mean()
+
+    current_price = get_current_price()
+    projected_price = current_price + (avg_delta * hours_ahead)
+
+    return round(projected_price, 2), round(avg_delta, 2), current_price
+
+def recommend_probo_vote_for_target(target_price, target_time_str):
+    # 1. Parse time and calculate hours remaining
+    now = datetime.datetime.utcnow()
+    target_time = datetime.datetime.strptime(target_time_str, "%H:%M")
+    target_time = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
+    
+    if target_time < now:
+        target_time += datetime.timedelta(days=1)
+
+    hours_remaining = (target_time - now).total_seconds() / 3600
+    hours_remaining = max(0.25, round(hours_remaining, 2))  # Minimum 15 min window
+
+    # 2. Get sentiment
+    sentiment = get_bitcoin_sentiment()
+
+    # 3. Predict price
+    projected, delta, current = predict_future_price(hours_remaining)
+
+    # 4. Decision logic
+    if projected >= target_price and sentiment >= -0.1:
+        vote = "YES"
+    else:
+        vote = "NO"
+
+    # 5. Return analysis
+    result = {
+        "current_price": current,
+        "avg_delta_per_hour": delta,
+        "hours_remaining": hours_remaining,
+        "projected_price": projected,
+        "sentiment": sentiment,
+        "target_price": target_price,
+        "target_time": target_time.strftime("%H:%M"),
+        "vote": vote
+    }
+
+    return result
+
+if __name__ == "__main__":
+    # Sample example:
+    question = recommend_probo_vote_for_target(target_price=63500, target_time_str="23:00")
+    
+    print("\n🧠 Prediction Summary:")
+    for k, v in question.items():
+        print(f"{k.replace('_', ' ').title()}: {v}")
+
+
+--- END FILE: predictor.py ---
+
+--- START FILE: probo_strategy.py ---
+
+# probo_strategy.py
+
+from btc_data import fetch_ohlcv, add_technical_indicators, get_current_price
+from sentiment import get_bitcoin_sentiment
+
+def interpret_market_conditions(df):
+    latest = df.iloc[-1]
+    rsi = latest["RSI"]
+    ema_20 = latest["EMA_20"]
+    ema_50 = latest["EMA_50"]
+
+    # Trend signal
+    bullish_trend = ema_20 > ema_50
+    oversold = rsi < 30
+    overbought = rsi > 70
+
+    return {
+        "bullish_trend": bullish_trend,
+        "oversold": oversold,
+        "overbought": overbought,
+        "rsi": rsi,
+        "ema_20": ema_20,
+        "ema_50": ema_50
+    }
+
+def recommend_probo_vote():
+    print("[+] Fetching market data...")
+    df = fetch_ohlcv()
+    df = add_technical_indicators(df)
+    market = interpret_market_conditions(df)
+    price = get_current_price()
+
+    print("[+] Analyzing sentiment...")
+    sentiment_score = get_bitcoin_sentiment()
+
+    print("\n📊 BTC Market Snapshot")
+    print(f"Price: ${price}")
+    print(f"RSI: {market['rsi']:.2f} | EMA20: {market['ema_20']:.2f} | EMA50: {market['ema_50']:.2f}")
+    print(f"Sentiment Score: {sentiment_score} ({'Bullish' if sentiment_score > 0 else 'Bearish' if sentiment_score < 0 else 'Neutral'})")
+
+    # Decision logic
+    vote = "NO"
+    if market["bullish_trend"] and sentiment_score > 0:
+        vote = "YES"
+    elif market["oversold"] and sentiment_score > -0.1:
+        vote = "YES"
+    elif market["overbought"] and sentiment_score < 0:
+        vote = "NO"
+
+    print(f"\n🧠 Probo Recommendation: ✅ Vote {vote}")
+    return vote
+
+if __name__ == "__main__":
+    recommend_probo_vote()
+
+
+--- END FILE: probo_strategy.py ---
+
+--- START FILE: requirements.txt ---
+
+streamlit
+pandas
+requests
+plotly
+ta
+feedparser
+textblob
+urllib3
+python-telegram-bot==13.15
+flask
+flask-cors # Add this for CORS handling
+gunicorn # For production deployment
+
+--- END FILE: requirements.txt ---
+
+--- START FILE: sentiment.py ---
+
+# sentiment.py (Fixed)
+
+import feedparser
+from textblob import TextBlob
+import urllib.parse
+import streamlit as st
+
+def fetch_news_sentiment(query="bitcoin", max_items=20):
+    encoded_query = urllib.parse.quote(query)  # URL encode the query
+    url = f"https://news.google.com/rss/search?q={encoded_query}"
+    
+    feed = feedparser.parse(url)
+    headlines = [entry.title for entry in feed.entries[:max_items]]
+
+    if not headlines:
+        return 0  # Neutral if no news
+
+    sentiments = [TextBlob(headline).sentiment.polarity for headline in headlines]
+    return round(sum(sentiments) / len(sentiments), 3)
+
+@st.cache_data(ttl=600)
+def get_bitcoin_sentiment():
+    return fetch_news_sentiment("bitcoin OR btc")
+
+
+--- END FILE: sentiment.py ---
+
+--- START FILE: telegram_bot.py ---
+
+# telegram_bot.py
+import requests
+import os
+
+# Your bot token and user ID
+# Get BOT_TOKEN from environment variable
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_FALLBACK_TOKEN_IF_NOT_SET")
+USER_ID = os.environ.get("TELEGRAM_USER_ID", 5368095453) # Or keep your numeric ID if it's constant
+
+def send_telegram_alert(message):
+    if not BOT_TOKEN or BOT_TOKEN == "YOUR_FALLBACK_TOKEN_IF_NOT_SET":
+        print("❌ Telegram BOT_TOKEN not configured. Alert not sent.")
+        return
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": USER_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        response = requests.post(url, json=payload)
+        if response.status_code == 200:
+            print("✅ Telegram alert sent successfully.")
+        else:
+            print("❌ Failed to send alert:", response.text)
+    except Exception as e:
+        print("❌ Telegram alert error:", str(e))
+
+# Test message
+if __name__ == "__main__":
+    # For local testing, you might set it temporarily
+    # os.environ["TELEGRAM_BOT_TOKEN"] = "YOUR_BOT_TOKEN_HERE"
+    send_telegram_alert("🚨 Test alert from BTC Probo Predictor!")
+
+--- END FILE: telegram_bot.py ---
+
+-----------------------------------------------------------------------------------
+
+read all the codes and tell me why it's not working and what needs change?
+
+--- END FILE: combined_project_files.txt ---
+
+--- START FILE: combine_project.py ---
+
+import os
+
+def combine_files_to_single_file(root_dir, output_filename="combined_project_files.txt"):
+    """
+    Combines the content of all files in a directory into a single file,
+    excluding 'node_modules' directories and 'package-lock.json' files.
+
+    Args:
+        root_dir (str): The root directory of the project.
+        output_filename (str): The name of the output file.
+    """
+    combined_content = []
+    excluded_dirs = ['node_modules', '.git', '.vscode', '.idea', 'dist', 'build']
+    excluded_files = ['package-lock.json', 'yarn.lock', 'bun.lockb', '.env'] # Added .env as it might contain sensitive info
+
+    print(f"Starting to combine files from: {root_dir}")
+    print(f"Excluding directories: {excluded_dirs}")
+    print(f"Excluding files: {excluded_files}")
+
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        # Modify dirnames in-place to skip excluded directories
+        dirnames[:] = [d for d in dirnames if d not in excluded_dirs]
+
+        for filename in filenames:
+            if filename in excluded_files:
+                print(f"Skipping excluded file: {os.path.join(dirpath, filename)}")
+                continue
+
+            file_path = os.path.join(dirpath, filename)
+            # Make path relative to root_dir for the header
+            relative_file_path = os.path.relpath(file_path, root_dir)
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                combined_content.append(f"\n--- START FILE: {relative_file_path} ---\n\n")
+                combined_content.append(content)
+                combined_content.append(f"\n\n--- END FILE: {relative_file_path} ---\n")
+                print(f"Included file: {relative_file_path}")
+            except UnicodeDecodeError:
+                print(f"Skipping binary or undecodable file (UnicodeDecodeError): {relative_file_path}")
+            except Exception as e:
+                print(f"Error reading file {relative_file_path}: {e}")
+
+    output_path = os.path.join(root_dir, output_filename)
+    try:
+        with open(output_path, 'w', encoding='utf-8') as outfile:
+            outfile.write("".join(combined_content))
+        print(f"\nSuccessfully combined all files into: {output_path}")
+    except Exception as e:
+        print(f"Error writing output file {output_path}: {e}")
+
+if __name__ == "__main__":
+    # Get the current working directory where the script is run
+    # This assumes you run the script from your project's root directory
+    project_root = os.getcwd()
+    combine_files_to_single_file(project_root)
+
+
+--- END FILE: combine_project.py ---
+
+--- START FILE: index.html ---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC Probo Predictor</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Plotly.js CDN for charting -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Dark background */
+            color: #e2e8f0; /* Light text */
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top */
+            min-height: 100vh;
+            overflow-y: auto; /* Allow scrolling */
+        }
+        .container {
+            background-color: #1a202c; /* Slightly lighter dark background for container */
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 800px; /* Max width for desktop */
+            margin: 1rem; /* Margin for mobile and desktop */
+            box-sizing: border-box;
+        }
+        h1, h2, h3, h4 {
+            color: #cbd5e1;
+        }
+        input[type="number"], input[type="time"], button {
+            background-color: #2d3748;
+            border: 1px solid #4a5568;
+            color: #e2e8f0;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease-in-out;
+        }
+        input[type="number"]:focus, input[type="time"]:focus, button:focus {
+            outline: none;
+            border-color: #63b3ed;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+        }
+        button {
+            cursor: pointer;
+            font-weight: 600;
+            background-color: #4299e1;
+            border-color: #4299e1;
+        }
+        button:hover {
+            background-color: #3182ce;
+            border-color: #3182ce;
+        }
+        .metric-value {
+            font-size: 2.25rem; /* text-4xl */
+            font-weight: 700; /* font-bold */
+            color: #48bb78; /* green-500 */
+        }
+        .expander-header {
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            font-weight: 600;
+            color: #94a3b8;
+            border-bottom: 1px solid #4a5568;
+        }
+        .expander-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .expander-content.expanded {
+            max-height: 1000px; /* Adjust as needed for content height */
+            transition: max-height 0.5s ease-in;
+        }
+        .arrow {
+            transition: transform 0.3s ease-out;
+        }
+        .arrow.expanded {
+            transform: rotate(90deg);
+        }
+        .plotly-graph-div {
+            border-radius: 0.75rem; /* rounded-xl */
+            overflow: hidden; /* Ensure content respects border-radius */
+            background-color: #2d3748; /* Darker background for chart area */
+        }
+        .plotly .modebar {
+            background-color: #2d3748 !important; /* Darker background for plotly modebar */
+            border-radius: 0.5rem;
+            padding: 0.25rem;
+        }
+        .plotly .modebar-btn {
+            color: #cbd5e1 !important;
+        }
+        .plotly .modebar-btn:hover {
+            background-color: #4a5568 !important;
+        }
+        .success-message {
+            background-color: #22543d; /* green-900 */
+            color: #9ae6b4; /* green-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .warning-message {
+            background-color: #7b341e; /* orange-900 */
+            color: #fbd38d; /* orange-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .info-message {
+            background-color: #2a4365; /* blue-900 */
+            color: #90cdf4; /* blue-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .error-message {
+            background-color: #742a2a; /* red-900 */
+            color: #feb2b2; /* red-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container">
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6">📲 BTC Probo Predictor</h1>
+
+        <!-- BTC Price Metric -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 flex justify-between items-center">
+            <span class="text-xl font-medium text-gray-400">💰 BTC Price</span>
+            <span id="current-price-display" class="metric-value">$0.00</span>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Prediction Form -->
+        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🔮 Predict Probo Outcome</h2>
+        <form id="prediction-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="target-price" class="block text-sm font-medium text-gray-400 mb-1">Target Price (USDT)</label>
+                    <input type="number" id="target-price" value="65000" class="w-full rounded-lg px-4 py-2" step="any">
+                </div>
+                <div>
+                    <label for="target-time" class="block text-sm font-medium text-gray-400 mb-1">Target Time (HH:MM in IST)</label>
+                    <input type="time" id="target-time" value="23:00" class="w-full rounded-lg px-4 py-2">
+                </div>
+            </div>
+            <button type="submit" class="w-full py-2 rounded-lg text-white font-semibold">Get Recommendation</button>
+        </form>
+
+        <div id="prediction-results" class="mt-6 space-y-4">
+            <!-- Prediction Summary -->
+            <div id="prediction-summary-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+                <span class="text-lg text-gray-200">📊 Prediction Summary</span>
+                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="prediction-summary-content" class="expander-content bg-gray-800 p-4 rounded-lg">
+                <p class="text-gray-300"><strong class="text-gray-100">Current Price:</strong> <span id="summary-current-price">$0.00</span></p>
+                <p class="text-gray-300"><strong class="text-gray-100">Avg Δ/hr:</strong> <span id="summary-avg-delta">$0.00</span></p>
+                <p class="text-gray-300"><strong class="text-gray-100">Time Left:</strong> <span id="summary-time-left">0 hr(s)</span></p>
+                <p class="text-gray-300"><strong class="text-gray-100">Projected Price:</strong> <span id="summary-projected-price">$0.00</span></p>
+                <p class="text-gray-300"><strong class="text-gray-100">Sentiment Score:</strong> <span id="summary-sentiment-score">0.00</span></p>
+                <p class="text-gray-300"><strong class="text-gray-100">Target Time (IST):</strong> <span id="summary-target-time">HH:MM</span></p>
+            </div>
+
+            <!-- Recommended Vote -->
+            <div id="recommended-vote-message" class="hidden"></div>
+
+            <!-- Prediction Confidence Advisor -->
+            <hr class="border-gray-700 my-6">
+            <h3 class="text-xl font-semibold text-gray-200">💡 Prediction Confidence Advisor</h3>
+
+            <div id="trust-signals-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+                <span class="text-lg text-gray-200">✅ Trust Signals</span>
+                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="trust-signals-content" class="expander-content bg-gray-800 p-4 rounded-lg">
+                <ul class="list-disc list-inside text-gray-300 space-y-1">
+                    <li>Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
+                    <li>BTC is trending cleanly (up or down): <span id="trust-trend"></span></li>
+                    <li>Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
+                    <li>RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
+                    <li>No major news expected: <span class="text-yellow-400">*Requires manual check*</span></li>
+                    <li>Candle bodies are stable (not huge wicks): <span class="text-yellow-400">*Requires visual inspection of chart*</span></li>
+                </ul>
+            </div>
+
+            <div id="caution-flags-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+                <span class="text-lg text-gray-200">⚠️ Caution Flags</span>
+                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="caution-flags-content" class="expander-content bg-gray-800 p-4 rounded-lg">
+                <ul class="list-disc list-inside text-gray-300 space-y-1">
+                    <li>Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
+                    <li>BTC just made a massive move: <span class="text-yellow-400">*Requires manual check/recent price analysis*</span></li>
+                    <li>RSI is &gt; 75 or &lt; 25: <span id="caution-rsi"></span></li>
+                    <li>Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
+                    <li>Big news coming (Fed rate hike, CPI data): <span class="text-yellow-400">*Requires manual check of news calendar*</span></li>
+                    <li>Candle volatility is high (huge wicks): <span class="text-yellow-400">*Requires visual inspection of chart*</span></li>
+                </ul>
+            </div>
+
+            <hr class="border-gray-700 my-6">
+            <p class="text-gray-300"><strong class="text-gray-100">Total Trust Signals Met:</strong> <span id="total-trust-signals">0</span></p>
+            <p class="text-gray-300"><strong class="text-gray-100">Total Caution Flags Present:</strong> <span id="total-caution-flags">0</span></p>
+            <div id="pro-tip-message" class="mt-4"></div>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Technical Indicators -->
+        <div id="technical-indicators-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+            <span class="text-lg text-gray-200">🧪 Technical Indicators</span>
+            <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+        </div>
+        <div id="technical-indicators-content" class="expander-content bg-gray-800 p-4 rounded-lg">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-sm text-gray-400">RSI</div>
+                    <div id="metric-rsi" class="text-xl font-bold text-green-400">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-sm text-gray-400">EMA 20</div>
+                    <div id="metric-ema20" class="text-xl font-bold text-blue-400">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-sm text-gray-400">EMA 50</div>
+                    <div id="metric-ema50" class="text-xl font-bold text-purple-400">0.00</div>
+                </div>
+            </div>
+            <div class="mt-4 text-gray-300">
+                <p><strong class="text-gray-100">Trend:</strong> <span id="market-trend"></span></p>
+                <p><strong class="text-gray-100">RSI Zone:</strong> <span id="market-rsi-zone"></span></p>
+            </div>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Chart -->
+        <div id="chart-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+            <span class="text-lg text-gray-200">📊 View Chart</span>
+            <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+        </div>
+        <div id="chart-content" class="expander-content bg-gray-800 p-4 rounded-lg">
+            <div id="candlestick-chart" class="w-full h-96"></div>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Cheat Sheet Reference -->
+        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🧠 BTC Probo Prediction Cheat Sheet Reference</h2>
+        <p class="text-gray-400 mb-4">This section provides the original guidelines for reference.</p>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ TRUST the Prediction When:</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li><strong>Condition</strong>: Time to expiry is &lt; 2 hours
+                <ul><li><strong>Why</strong>: Short-term moves are easier to project with recent trend/sentiment</li></ul>
+            </li>
+            <li><strong>Condition</strong>: BTC is trending cleanly (up or down)
+                <ul><li><strong>Why</strong>: EMA crossover + delta will align clearly</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Sentiment score is strongly positive/negative (&gt;0.2)
+                <ul><li><strong>Why</strong>: Clear market direction from sentiment</li></ul>
+            </li>
+            <li><strong>Condition</strong>: RSI is not extreme (30–70)
+                <ul><li><strong>Why</strong>: Means no strong mean-reversion counterforces</li></ul>
+            </li>
+            <li><strong>Condition</strong>: No major news expected
+                <ul><li><strong>Why</strong>: Market moves more "technically" in news-free windows</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Candle bodies are stable (not huge wicks)
+                <ul><li><strong>Why</strong>: Less noise = better delta prediction accuracy</li></ul>
+            </li>
+        </ul>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">⚠️ BE CAUTIOUS / DOUBLE-CHECK When:</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li><strong>Red Flag</strong>: Target time is &gt; 3 hours away
+                <ul><li><strong>Why</strong>: Market conditions may shift unpredictably</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: BTC just made a massive move
+                <ul><li><strong>Why</strong>: Mean reversion likely → momentum may reverse</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: RSI is &gt; 75 or &lt; 25
+                <ul><li><strong>Why</strong>: Overbought/oversold zones are prone to reversals</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Sentiment is conflicting (score ≈ 0)
+                <ul><li><strong>Why</strong>: Market indecisive — avoid betting</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Big news coming (Fed rate hike, CPI data)
+                <ul><li><strong>Why</strong>: Trends and sentiment can break instantly</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Candle volatility is high (huge wicks)
+                <ul><li><strong>Why</strong>: Delta estimates become noisy and inaccurate</li></ul>
+            </li>
+        </ul>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">🔐 Pro Tip (Original Reference):</h3>
+        <p class="text-gray-300 mb-2">If at least 3/5 “Trust” signals align → GO with the vote.</p>
+        <p class="text-gray-300 mb-4">If 2+ “Caution” flags are present → SKIP the trade or wait.</p>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li>Time: 1 hour left</li>
+            <li>BTC uptrending</li>
+            <li>EMA20 &gt; EMA50</li>
+            <li>RSI = 58</li>
+            <li>Sentiment = +0.3</li>
+            <li>→ ✅ Trust YES vote</li>
+        </ul>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">⚠️ Example: When to AVOID (Original Reference)</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li>Time: 4 hours left</li>
+            <li>BTC dumped $800 in 15 mins</li>
+            <li>RSI = 22</li>
+            <li>Sentiment = 0.05</li>
+            <li>→ ⚠️ Avoid vote — unpredictable zone</li>
+        </ul>
+
+    </div>
+
+    <script>
+        // Helper function to toggle expander sections
+        function setupExpander(headerId, contentId) {
+            const header = document.getElementById(headerId);
+            const content = document.getElementById(contentId);
+            const arrow = header.querySelector('.arrow');
+
+            header.addEventListener('click', () => {
+                const isExpanded = content.classList.contains('expanded');
+                if (isExpanded) {
+                    content.classList.remove('expanded');
+                    arrow.classList.remove('expanded');
+                } else {
+                    content.classList.add('expanded');
+                    arrow.classList.add('expanded');
+                }
+            });
+        }
+
+        // Setup all expanders
+        setupExpander('prediction-summary-expander', 'prediction-summary-content');
+        setupExpander('technical-indicators-expander', 'technical-indicators-content');
+        setupExpander('chart-expander', 'chart-content');
+        setupExpander('trust-signals-expander', 'trust-signals-content');
+        setupExpander('caution-flags-expander', 'caution-flags-content');
+
+        // --- Backend API URL ---
+        // IMPORTANT: Replace this with the actual URL of your deployed Flask backend
+        // For local testing: 'http://localhost:5000'
+        const BACKEND_API_URL = 'http://localhost:5000'; // <--- CHANGE THIS FOR DEPLOYMENT!
+
+        let currentMarketConditions = {}; // Store market conditions globally
+
+        // --- UI Update Functions ---
+
+        function updateUI(currentPrice, sentimentScore, marketConditions, chartData, predictionResult = null) {
+            // Update Current Price Metric
+            document.getElementById('current-price-display').textContent = `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            // Update Technical Indicators
+            document.getElementById('metric-rsi').textContent = marketConditions.rsi ? marketConditions.rsi.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema20').textContent = marketConditions.ema_20 ? marketConditions.ema_20.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema50').textContent = marketConditions.ema_50 ? marketConditions.ema_50.toFixed(2) : 'N/A';
+            document.getElementById('market-trend').textContent = marketConditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
+            let rsiZone = '';
+            if (marketConditions.overbought) rsiZone = '🔥 Overbought';
+            else if (marketConditions.oversold) rsiZone = '🧊 Oversold';
+            else rsiZone = '✅ Neutral';
+            document.getElementById('market-rsi-zone').textContent = rsiZone;
+
+            // Update Chart
+            drawChart(chartData);
+
+            // Update Prediction Summary and Confidence Advisor if predictionResult is available
+            if (predictionResult) {
+                document.getElementById('summary-current-price').textContent = `$${predictionResult.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('summary-avg-delta').textContent = `$${predictionResult.avg_delta_per_hour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('summary-time-left').textContent = `${predictionResult.hours_remaining} hr(s)`;
+                document.getElementById('summary-projected-price').textContent = `$${predictionResult.projected_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('summary-sentiment-score').textContent = predictionResult.sentiment.toFixed(2);
+                document.getElementById('summary-target-time').textContent = predictionResult.target_time;
+
+                const voteMessageDiv = document.getElementById('recommended-vote-message');
+                voteMessageDiv.innerHTML = `<div class="success-message">🧠 Recommended Vote: <strong>${predictionResult.vote}</strong></div>`;
+                voteMessageDiv.classList.remove('hidden');
+
+                const confidence = predictionResult.confidence_advisor;
+                document.getElementById('trust-time').innerHTML = confidence.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-trend').innerHTML = confidence.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
+                document.getElementById('trust-sentiment').innerHTML = confidence.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
+                document.getElementById('trust-rsi').innerHTML = confidence.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+
+                document.getElementById('caution-time').innerHTML = confidence.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-rsi').innerHTML = confidence.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+                document.getElementById('caution-sentiment').innerHTML = confidence.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
+
+                document.getElementById('total-trust-signals').textContent = confidence.trust_signals_count;
+                document.getElementById('total-caution-flags').textContent = confidence.caution_flags_count;
+
+                const proTipMessageDiv = document.getElementById('pro-tip-message');
+                let proTipClass = '';
+                if (confidence.trust_signals_count >= 3 && confidence.caution_flags_count < 2) {
+                    proTipClass = 'success-message';
+                } else if (confidence.caution_flags_count >= 2) {
+                    proTipClass = 'warning-message';
+                } else {
+                    proTipClass = 'info-message';
+                }
+                proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong>${confidence.advice_message}</strong></div>`;
+            }
+        }
+
+        // --- Charting with Plotly.js ---
+
+        function drawChart(chartData) {
+            // Ensure chartData is an array and has items
+            if (!Array.isArray(chartData) || chartData.length === 0) {
+                console.warn("No chart data available to draw.");
+                Plotly.purge('candlestick-chart'); // Clear existing chart if no data
+                return;
+            }
+
+            const timestamps = chartData.map(d => d.timestamp);
+            const openPrices = chartData.map(d => d.open);
+            const highPrices = chartData.map(d => d.high);
+            const lowPrices = chartData.map(d => d.low);
+            const closePrices = chartData.map(d => d.close);
+            const ema20 = chartData.map(d => d.EMA_20);
+            const ema50 = chartData.map(d => d.EMA_50);
+
+            const traceCandles = {
+                x: timestamps,
+                open: openPrices,
+                high: highPrices,
+                low: lowPrices,
+                close: closePrices,
+                type: 'candlestick',
+                name: 'Candles',
+                increasing: { line: { color: '#48bb78' } }, // Green for increasing
+                decreasing: { line: { color: '#ef4444' } }  // Red for decreasing
+            };
+
+            const traceEMA20 = {
+                x: timestamps,
+                y: ema20,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'EMA 20',
+                line: { color: '#63b3ed', width: 1.5 }
+            };
+
+            const traceEMA50 = {
+                x: timestamps,
+                y: ema50,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'EMA 50',
+                line: { color: '#a78bfa', width: 1.5 }
+            };
+
+            const layout = {
+                xaxis: {
+                    rangeslider: { visible: false },
+                    type: 'date',
+                    title: 'Time',
+                    tickfont: { color: '#cbd5e1' },
+                    gridcolor: '#4a5568',
+                    linecolor: '#4a5568'
+                },
+                yaxis: {
+                    title: 'Price (USDT)',
+                    tickfont: { color: '#cbd5e1' },
+                    gridcolor: '#4a5568',
+                    linecolor: '#4a5568'
+                },
+                plot_bgcolor: '#2d3748', // Chart background
+                paper_bgcolor: '#2d3748', // Paper background
+                font: { color: '#e2e8f0' },
+                margin: { l: 40, r: 40, t: 30, b: 30 },
+                showlegend: true,
+                legend: {
+                    x: 0, y: 1.15,
+                    bgcolor: 'rgba(0,0,0,0)',
+                    bordercolor: 'rgba(0,0,0,0)',
+                    font: { color: '#e2e8f0' }
+                }
+            };
+
+            Plotly.newPlot('candlestick-chart', [traceCandles, traceEMA20, traceEMA50], layout, { responsive: true, displayModeBar: true });
+        }
+
+        // --- Main Application Logic ---
+
+        async function initializeApp() {
+            document.getElementById('current-price-display').textContent = "Loading...";
+            const messageDiv = document.getElementById('recommended-vote-message');
+            messageDiv.innerHTML = ''; // Clear previous messages
+            messageDiv.classList.add('hidden');
+            document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+
+            try {
+                const response = await fetch(`${BACKEND_API_URL}/api/market_data`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || response.statusText}`);
+                }
+                const data = await response.json();
+
+                currentMarketConditions = data.market_conditions; // Store for later use
+                updateUI(data.current_price, data.sentiment_score, data.market_conditions, data.chart_data);
+
+            } catch (error) {
+                console.error("Error fetching market data:", error);
+                const messageDiv = document.getElementById('recommended-vote-message');
+                messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
+                messageDiv.classList.remove('hidden');
+                document.getElementById('current-price-display').textContent = "$ERROR";
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('prediction-form').addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent default form submission
+
+            const targetPrice = parseFloat(document.getElementById('target-price').value);
+            const targetTimeStr = document.getElementById('target-time').value;
+
+            const messageDiv = document.getElementById('recommended-vote-message');
+            messageDiv.innerHTML = ''; // Clear previous messages
+            messageDiv.classList.add('hidden');
+            document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+
+            if (isNaN(targetPrice) || !targetTimeStr) {
+                messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
+                messageDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_API_URL}/api/predict`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        target_price: targetPrice,
+                        target_time: targetTimeStr
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Prediction failed: ${errorData.error || response.statusText}`);
+                }
+
+                const predictionResult = await response.json();
+                
+                // Re-fetch market data to ensure the UI is consistent with the latest backend state
+                // This is important because the backend's `load_initial_data` is called on each API request,
+                // so the market data might have updated between the initial `initializeApp` call and this prediction.
+                const marketDataResponse = await fetch(`${BACKEND_API_URL}/api/market_data`);
+                if (!marketDataResponse.ok) {
+                    const errorData = await marketDataResponse.json();
+                    throw new Error(`Failed to refresh market data after prediction: ${errorData.error || marketDataResponse.statusText}`);
+                }
+                const marketData = await marketDataResponse.json();
+
+                updateUI(marketData.current_price, marketData.sentiment_score, marketData.market_conditions, marketData.chart_data, predictionResult);
+
+            } catch (error) {
+                console.error("Error during prediction:", error);
+                messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
+                messageDiv.classList.remove('hidden');
+            }
+        });
+
+        // Initialize the app when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+        // Periodically update market data (e.g., every 5 minutes)
+        setInterval(initializeApp, 300000); // 300000 ms = 5 minutes
+
+    </script>
+</body>
+</html>
+
+
+--- END FILE: index.html ---
+
+--- START FILE: predictor.py ---
+
+# predictor.py
+
+import datetime
+import pandas as pd # Ensure pandas is imported
+
+# Removed redundant imports (fetch_ohlcv, add_technical_indicators, get_current_price, get_bitcoin_sentiment)
+# as these functions will now receive the necessary data (df, current_price, sentiment_score)
+# directly from the calling backend_app.py
+
+def predict_future_price(df: pd.DataFrame, current_price: float, hours_ahead: float = 1):
+    """
+    Predicts the future price based on historical price changes.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing historical OHLCV data, specifically 'close' prices.
+        current_price (float): The current BTC price.
+        hours_ahead (float): The number of hours into the future to predict.
+
+    Returns:
+        tuple: (projected_price, average_delta_per_hour, current_price)
+    """
+    if df.empty or 'close' not in df.columns or len(df) < 2:
+        # Not enough data to calculate price changes, return current price as projected
+        print("Warning: Not enough data in DataFrame for accurate price prediction. Returning current price as projected.")
+        return current_price, 0.0, current_price
+
+    # Ensure 'close' column is numeric
+    df_numeric_close = pd.to_numeric(df['close'], errors='coerce').dropna()
+    if df_numeric_close.empty or len(df_numeric_close) < 2:
+        print("Warning: 'close' column has insufficient numeric data for prediction. Returning current price as projected.")
+        return current_price, 0.0, current_price
+
+    # Calculate average price movement per hour from the historical data
+    price_changes = df_numeric_close.diff().dropna()
+    
+    avg_delta = price_changes.mean() if not price_changes.empty else 0.0
+
+    projected_price = current_price + (avg_delta * hours_ahead)
+
+    return round(projected_price, 2), round(avg_delta, 2), current_price
+
+def recommend_probo_vote_for_target(df: pd.DataFrame, current_price: float, sentiment_score: float, target_price: float, target_time_str: str):
+    """
+    Recommends a 'YES' or 'NO' vote for a Probo outcome based on projected price and sentiment.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing historical OHLCV data.
+        current_price (float): The current BTC price.
+        sentiment_score (float): The current Bitcoin sentiment score.
+        target_price (float): The target price for the Probo outcome.
+        target_time_str (str): The target time in "HH:MM" format (UTC).
+
+    Returns:
+        dict: A dictionary containing prediction details and the recommended vote.
+    """
+    # 1. Parse time and calculate hours remaining
+    now_utc = datetime.datetime.utcnow()
+    
+    # Parse target_time_str (which is expected to be HH:MM in UTC from backend)
+    target_time_only = datetime.datetime.strptime(target_time_str, "%H:%M").time()
+    
+    # Combine today's UTC date with target time
+    target_datetime_utc = now_utc.replace(hour=target_time_only.hour, minute=target_time_only.minute, second=0, microsecond=0)
+    
+    # If target time has already passed today (UTC), assume it's for tomorrow
+    if target_datetime_utc < now_utc:
+        target_datetime_utc += datetime.timedelta(days=1)
+
+    hours_remaining = (target_datetime_utc - now_utc).total_seconds() / 3600
+    hours_remaining = max(0.25, round(hours_remaining, 2))  # Minimum 15 min window (0.25 hours)
+
+    # 2. Use passed sentiment
+    sentiment = sentiment_score
+
+    # 3. Predict price using the provided df and current_price
+    projected, delta, current = predict_future_price(df, current_price, hours_remaining)
+
+    # 4. Decision logic
+    # Vote 'YES' if projected price meets or exceeds target AND sentiment is not strongly negative
+    if projected >= target_price and sentiment >= -0.1:
+        vote = "YES"
+    else:
+        vote = "NO"
+
+    # 5. Return analysis
+    result = {
+        "current_price": current,
+        "avg_delta_per_hour": delta,
+        "hours_remaining": hours_remaining,
+        "projected_price": projected,
+        "sentiment": sentiment,
+        "target_price": target_price,
+        "target_time": target_time_str, # Keep the original HH:MM string for display
+        "vote": vote
+    }
+
+    return result
+
+if __name__ == "__main__":
+    # This block is for local testing of predictor.py's functions
+    # In a real application, these functions are called by backend_app.py
+    print("--- Testing predictor.py (requires mock data) ---")
+    
+    # Example of how to test locally (uncomment and run if needed)
+    # from btc_data import fetch_ohlcv, add_technical_indicators, get_current_price
+    # from sentiment import get_bitcoin_sentiment
+
+    # print("Fetching mock data for local predictor test...")
+    # df_test = fetch_ohlcv(limit=50) # Fetch some data
+    # df_test = add_technical_indicators(df_test) # Add indicators
+    # current_price_test = get_current_price() # Get current price
+    # sentiment_test = get_bitcoin_sentiment() # Get sentiment
+
+    # if not df_test.empty and current_price_test > 0:
+    #     target_price_test = current_price_test + 500 # Example target
+    #     target_time_test = (datetime.datetime.utcnow() + datetime.timedelta(hours=2)).strftime("%H:%M") # 2 hours from now UTC
+
+    #     question = recommend_probo_vote_for_target(
+    #         df=df_test,
+    #         current_price=current_price_test,
+    #         sentiment_score=sentiment_test,
+    #         target_price=target_price_test,
+    #         target_time_str=target_time_test
+    #     )
+        
+    #     print("\n🧠 Prediction Summary (Local Test):")
+    #     for k, v in question.items():
+    #         print(f"{k.replace('_', ' ').title()}: {v}")
+    # else:
+    #     print("Could not fetch sufficient data for local predictor test.")
+
+
+
+--- END FILE: predictor.py ---
+
+--- START FILE: probo_strategy.py ---
+
+# probo_strategy.py
+
+import pandas as pd
+import numpy as np # Import numpy to check for NaN
+
+def interpret_market_conditions(df: pd.DataFrame):
+    """
+    Interprets market conditions based on technical indicators (RSI, EMA).
+
+    Args:
+        df (pandas.DataFrame): DataFrame with 'RSI', 'EMA_20', and 'EMA_50' columns.
+
+    Returns:
+        dict: A dictionary containing interpreted market conditions.
+    """
+    if df.empty or 'RSI' not in df.columns or 'EMA_20' not in df.columns or 'EMA_50' not in df.columns:
+        print("Warning: DataFrame is empty or missing required columns for market interpretation. Returning default conditions.")
+        return {
+            "bullish_trend": False,
+            "oversold": False,
+            "overbought": False,
+            "rsi": 50.0,
+            "ema_20": 0.0,
+            "ema_50": 0.0
+        }
+
+    # Get the latest values
+    latest = df.iloc[-1]
+
+    # Convert numpy types to standard Python types and handle NaN
+    # Use pd.notna() for robust NaN check
+    rsi = float(latest["RSI"]) if pd.notna(latest["RSI"]) else None
+    ema_20 = float(latest["EMA_20"]) if pd.notna(latest["EMA_20"]) else None
+    ema_50 = float(latest["EMA_50"]) if pd.notna(latest["EMA_50"]) else None
+
+    # Trend signal: EMA20 > EMA50 generally indicates an uptrend
+    # Ensure EMA values are not None before comparison, and explicitly cast to bool
+    bullish_trend = bool(ema_20 is not None and ema_50 is not None and ema_20 > ema_50)
+    
+    # RSI zones
+    oversold = bool(rsi is not None and rsi < 30)
+    overbought = bool(rsi is not None and rsi > 70)
+
+    return {
+        "bullish_trend": bullish_trend,
+        "oversold": oversold,
+        "overbought": overbought,
+        "rsi": rsi,
+        "ema_20": ema_20,
+        "ema_50": ema_50
+    }
+
+def recommend_probo_vote():
+    """
+    (Deprecated for Flask backend usage)
+    Recommends a Probo vote based on market conditions and sentiment.
+    This function is more suitable for a standalone script or a Streamlit app.
+    For the Flask backend, individual components (fetch_ohlcv, add_technical_indicators,
+    get_current_price, get_bitcoin_sentiment, interpret_market_conditions) are called
+    and their results are used to build the prediction.
+    """
+    from btc_data import fetch_ohlcv, add_technical_indicators, get_current_price
+    from sentiment import get_bitcoin_sentiment
+
+    print("[+] Fetching market data...")
+    df = fetch_ohlcv()
+    if df.empty:
+        print("Failed to fetch OHLCV data. Cannot recommend vote.")
+        return "N/A"
+
+    df = add_technical_indicators(df)
+    market = interpret_market_conditions(df)
+    price = get_current_price()
+
+    print("[+] Analyzing sentiment...")
+    sentiment_score = get_bitcoin_sentiment()
+
+    print("\n📊 BTC Market Snapshot")
+    print(f"Price: ${price:.2f}")
+    # Handle None values for display
+    rsi_display = f"{market['rsi']:.2f}" if market['rsi'] is not None else "N/A"
+    ema20_display = f"{market['ema_20']:.2f}" if market['ema_20'] is not None else "N/A"
+    ema50_display = f"{market['ema_50']:.2f}" if market['ema_50'] is not None else "N/A"
+    print(f"RSI: {rsi_display} | EMA20: {ema20_display} | EMA50: {ema50_display}")
+    sentiment_status = 'Bullish' if sentiment_score > 0 else 'Bearish' if sentiment_score < 0 else 'Neutral'
+    print(f"Sentiment Score: {sentiment_score:.3f} ({sentiment_status})")
+
+    # Decision logic (simplified for this example)
+    vote = "NO"
+    if market["bullish_trend"] and sentiment_score > 0.1:
+        vote = "YES"
+    elif market["oversold"] and sentiment_score > -0.05:
+        vote = "YES"
+    elif market["overbought"] and sentiment_score < -0.1:
+        vote = "NO"
+
+    print(f"\n🧠 Probo Recommendation: ✅ Vote {vote}")
+    return vote
+
+if __name__ == "__main__":
+    print("--- Running standalone Probo Strategy Recommendation ---")
+    recommend_probo_vote()
+
+
+--- END FILE: probo_strategy.py ---
+
+--- START FILE: requirements.txt ---
+
+streamlit
+pandas
+requests
+plotly
+ta
+feedparser
+textblob
+urllib3
+python-telegram-bot==13.15
+flask
+flask-cors
+gunicorn
+pytz
+numpy # Added for handling NumPy types in JSON serialization
+
+
+--- END FILE: requirements.txt ---
+
+--- START FILE: sentiment.py ---
+
+# sentiment.py
+
+import feedparser
+from textblob import TextBlob
+import urllib.parse
+# Removed: import streamlit as st
+
+def fetch_news_sentiment(query="bitcoin", max_items=20):
+    """
+    Fetches news headlines for a given query from Google News RSS and calculates
+    an average sentiment polarity using TextBlob.
+
+    Args:
+        query (str): The search query (e.g., "bitcoin").
+        max_items (int): Maximum number of news items to process.
+
+    Returns:
+        float: Average sentiment polarity (between -1.0 and 1.0).
+               Returns 0.0 if no headlines are found or an error occurs.
+    """
+    encoded_query = urllib.parse.quote(query)  # URL encode the query
+    url = f"https://news.google.com/rss/search?q={encoded_query}"
+    
+    try:
+        feed = feedparser.parse(url)
+        headlines = [entry.title for entry in feed.entries[:max_items]]
+
+        if not headlines:
+            print(f"No news headlines found for query: '{query}'")
+            return 0.0  # Neutral if no news
+
+        sentiments = [TextBlob(headline).sentiment.polarity for headline in headlines]
+        return round(sum(sentiments) / len(sentiments), 3)
+    except Exception as e:
+        print(f"Error fetching or analyzing news sentiment for '{query}': {e}")
+        return 0.0 # Return neutral sentiment on error
+
+# Removed: @st.cache_data(ttl=600) decorator as it's Streamlit-specific
+def get_bitcoin_sentiment():
+    """
+    Gets the sentiment score specifically for Bitcoin.
+    """
+    return fetch_news_sentiment("bitcoin OR btc")
+
+if __name__ == "__main__":
+    print("--- Testing sentiment.py ---")
+    sentiment = get_bitcoin_sentiment()
+    print(f"Bitcoin Sentiment Score: {sentiment}")
+    if sentiment > 0:
+        print("Market sentiment is positive.")
+    elif sentiment < 0:
+        print("Market sentiment is negative.")
+    else:
+        print("Market sentiment is neutral or could not be determined.")
+
+
+
+--- END FILE: sentiment.py ---
+
+--- START FILE: telegram_bot.py ---
+
+# telegram_bot.py
+import requests
+import os
+
+# Your bot token and user ID
+# Get BOT_TOKEN from environment variable
+# IMPORTANT: Replace "YOUR_FALLBACK_TOKEN_IF_NOT_SET" with a dummy value
+# but ensure you set the actual environment variable in your deployment environment.
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_FALLBACK_TOKEN_IF_NOT_SET")
+USER_ID = os.environ.get("TELEGRAM_USER_ID", 5368095453) # Or keep your numeric ID if it's constant
+
+def send_telegram_alert(message):
+    """
+    Sends a Markdown-formatted message as an alert to a specified Telegram user.
+
+    Args:
+        message (str): The message content to send.
+    """
+    if not BOT_TOKEN or BOT_TOKEN == "YOUR_FALLBACK_TOKEN_IF_NOT_SET":
+        print("❌ Telegram BOT_TOKEN not configured. Alert not sent. Please set the TELEGRAM_BOT_TOKEN environment variable.")
+        return
+    
+    if not USER_ID:
+        print("❌ Telegram USER_ID not configured. Alert not sent. Please set the TELEGRAM_USER_ID environment variable.")
+        return
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": USER_ID,
+        "text": message,
+        "parse_mode": "Markdown" # Allows bold, italics, etc.
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=10) # Add timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        if response.status_code == 200:
+            print("✅ Telegram alert sent successfully.")
+        else:
+            print(f"❌ Failed to send alert (status code: {response.status_code}): {response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Telegram alert error (network/request issue): {str(e)}")
+    except Exception as e:
+        print(f"❌ An unexpected error occurred while sending Telegram alert: {str(e)}")
+
+# Test message
+if __name__ == "__main__":
+    print("--- Testing telegram_bot.py ---")
+    # For local testing, you MUST set the environment variables in your terminal
+    # before running this script. Example:
+    # export TELEGRAM_BOT_TOKEN="YOUR_ACTUAL_BOT_TOKEN_HERE"
+    # export TELEGRAM_USER_ID="YOUR_ACTUAL_USER_ID_HERE"
+    
+    test_message = "🚨 *Test Alert* from BTC Probo Predictor! If you see this, the bot is working."
+    send_telegram_alert(test_message)
+
+
+
+--- END FILE: telegram_bot.py ---
+
+------------------------------------------------------------------------------------------------------------------------
+
+now what i want you to work on or fix is that, the drop downs are not collapsing fully when closed. another thing i want you to work on is "*Requires manual check*", "*Requires visual inspection of chart*", "*Requires manual check/recent price analysis*", "*Requires manual check of news calendar*" these and make them work. another thing is show real-time graph which changes in real time just like in binance official website. please make these changes and send me the updated codes.

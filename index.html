@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC Probo Predictor</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Plotly.js CDN for charting -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Dark background */
+            color: #e2e8f0; /* Light text */
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top */
+            min-height: 100vh;
+            overflow-y: auto; /* Allow scrolling */
+        }
+        .container {
+            background-color: #1a202c; /* Slightly lighter dark background for container */
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 800px; /* Max width for desktop */
+            margin: 1rem; /* Margin for mobile and desktop */
+            box-sizing: border-box;
+        }
+        h1, h2, h3, h4 {
+            color: #cbd5e1;
+        }
+        input[type="number"], input[type="time"], button {
+            background-color: #2d3748;
+            border: 1px solid #4a5568;
+            color: #e2e8f0;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s ease-in-out;
+        }
+        input[type="number"]:focus, input[type="time"]:focus, button:focus {
+            outline: none;
+            border-color: #63b3ed;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+        }
+        button {
+            cursor: pointer;
+            font-weight: 600;
+            background-color: #4299e1;
+            border-color: #4299e1;
+        }
+        button:hover {
+            background-color: #3182ce;
+            border-color: #3182ce;
+        }
+        .metric-value {
+            font-size: 2.25rem; /* text-4xl */
+            font-weight: 700; /* font-bold */
+            color: #48bb78; /* green-500 */
+        }
+        .expander-header {
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            font-weight: 600;
+            color: #94a3b8;
+            border-bottom: 1px solid #4a5568;
+        }
+        .expander-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out; /* Add padding to transition */
+            padding: 0 1rem; /* Initial padding, will be adjusted by JS if needed */
+        }
+        .expander-content.expanded {
+            max-height: 9999px; /* Ensures content fully expands */
+            transition: max-height 0.5s ease-in, padding 0.5s ease-in; /* Add padding to transition */
+            padding: 1rem; /* Apply padding when expanded */
+        }
+        .arrow {
+            transition: transform 0.3s ease-out;
+        }
+        .arrow.expanded {
+            transform: rotate(90deg);
+        }
+        .plotly-graph-div {
+            border-radius: 0.75rem; /* rounded-xl */
+            overflow: hidden; /* Ensure content respects border-radius */
+            background-color: #2d3748; /* Darker background for chart area */
+        }
+        .plotly .modebar {
+            background-color: #2d3748 !important; /* Darker background for plotly modebar */
+            border-radius: 0.5rem;
+            padding: 0.25rem;
+        }
+        .plotly .modebar-btn {
+            color: #cbd5e1 !important;
+        }
+        .plotly .modebar-btn:hover {
+            background-color: #4a5568 !important;
+        }
+        .success-message {
+            background-color: #22543d; /* green-900 */
+            color: #9ae6b4; /* green-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .warning-message {
+            background-color: #7b341e; /* orange-900 */
+            color: #fbd38d; /* orange-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .info-message {
+            background-color: #2a4365; /* blue-900 */
+            color: #90cdf4; /* blue-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        .error-message {
+            background-color: #742a2a; /* red-900 */
+            color: #feb2b2; /* red-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+        /* Removed .manual-check-item and associated checkbox styles */
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container">
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6">📲 BTC Probo Predictor</h1>
+
+        <!-- BTC Price Metric -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 flex justify-between items-center">
+            <span class="text-xl font-medium text-gray-400">💰 BTC Price</span>
+            <span id="current-price-display" class="metric-value">$0.00</span>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Prediction Form -->
+        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🔮 Predict Probo Outcome</h2>
+        <form id="prediction-form" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="target-price" class="block text-sm font-medium text-gray-400 mb-1">Target Price (USDT)</label>
+                    <input type="number" id="target-price" value="65000" class="w-full rounded-lg px-4 py-2" step="any">
+                </div>
+                <div>
+                    <label for="target-time" class="block text-sm font-medium text-gray-400 mb-1">Target Time (HH:MM in IST)</label>
+                    <input type="time" id="target-time" value="23:00" class="w-full rounded-lg px-4 py-2">
+                </div>
+            </div>
+            <button type="submit" class="w-full py-2 rounded-lg text-white font-semibold">Get Recommendation</button>
+        </form>
+
+        <div id="prediction-results" class="mt-6 space-y-4">
+            <!-- Prediction Summary -->
+            <div id="prediction-summary-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+                <span class="text-lg text-gray-200">📊 Prediction Summary</span>
+                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="prediction-summary-content" class="expander-content bg-gray-800 rounded-lg">
+                <div class="p-4"> <!-- Inner div for padding -->
+                    <p class="text-gray-300"><strong class="text-gray-100">Current Price:</strong> <span id="summary-current-price">$0.00</span></p>
+                    <p class="text-gray-300"><strong class="text-gray-100">Avg Δ/hr:</strong> <span id="summary-avg-delta">$0.00</span></p>
+                    <p class="text-gray-300"><strong class="text-gray-100">Time Left:</strong> <span id="summary-time-left">0 hr(s)</span></p>
+                    <p class="text-gray-300"><strong class="text-gray-100">Projected Price:</strong> <span id="summary-projected-price">$0.00</span></p>
+                    <p class="text-gray-300"><strong class="text-gray-100">Sentiment Score:</strong> <span id="summary-sentiment-score">0.00</span></p>
+                    <p class="text-gray-300"><strong class="text-gray-100">Target Time (IST):</strong> <span id="summary-target-time">HH:MM</span></p>
+                </div>
+            </div>
+
+            <!-- Recommended Vote -->
+            <div id="recommended-vote-message" class="hidden"></div>
+
+            <!-- Prediction Confidence Advisor -->
+            <hr class="border-gray-700 my-6">
+            <h3 class="text-xl font-semibold text-gray-200">💡 Prediction Confidence Advisor</h3>
+
+            <div id="trust-signals-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+                <span class="text-lg text-gray-200">✅ Trust Signals</span>
+                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="trust-signals-content" class="expander-content bg-gray-800 rounded-lg">
+                <ul class="list-disc list-inside text-gray-300 space-y-1 p-4">
+                    <li>Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
+                    <li>BTC is trending cleanly (up or down): <span id="trust-trend"></span></li>
+                    <li>Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
+                    <li>RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
+                    <li>No major news expected: <span id="trust-news"></span></li>
+                    <li>Candle bodies are stable (not huge wicks): <span id="trust-stable-candles"></span></li>
+                </ul>
+            </div>
+
+            <div id="caution-flags-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+                <span class="text-lg text-gray-200">⚠️ Caution Flags</span>
+                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="caution-flags-content" class="expander-content bg-gray-800 rounded-lg">
+                <ul class="list-disc list-inside text-gray-300 space-y-1 p-4">
+                    <li>Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
+                    <li>BTC just made a massive move: <span id="caution-massive-move"></span></li>
+                    <li>RSI is &gt; 75 or &lt; 25: <span id="caution-rsi"></span></li>
+                    <li>Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
+                    <li>Big news coming (Fed rate hike, CPI data): <span id="caution-big-news"></span></li>
+                    <li>Candle volatility is high (huge wicks): <span id="caution-volatile-candles"></span></li>
+                </ul>
+            </div>
+
+            <hr class="border-gray-700 my-6">
+            <p class="text-gray-300"><strong class="text-gray-100">Total Trust Signals Met:</strong> <span id="total-trust-signals">0</span></p>
+            <p class="text-gray-300"><strong class="text-gray-100">Total Caution Flags Present:</strong> <span id="total-caution-flags">0</span></p>
+            <div id="pro-tip-message" class="mt-4"></div>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Technical Indicators -->
+        <div id="technical-indicators-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+            <span class="text-lg text-gray-200">🧪 Technical Indicators</span>
+            <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+        </div>
+        <div id="technical-indicators-content" class="expander-content bg-gray-800 rounded-lg">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center p-4"> <!-- Added p-4 here -->
+                <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-sm text-gray-400">RSI</div>
+                    <div id="metric-rsi" class="text-xl font-bold text-green-400">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-sm text-gray-400">EMA 20</div>
+                    <div id="metric-ema20" class="text-xl font-bold text-blue-400">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-sm text-gray-400">EMA 50</div>
+                    <div id="metric-ema50" class="text-xl font-bold text-purple-400">0.00</div>
+                </div>
+            </div>
+            <div class="mt-4 text-gray-300 p-4 pt-0"> <!-- Added p-4 here, pt-0 to prevent double padding -->
+                <p><strong class="text-gray-100">Trend:</strong> <span id="market-trend"></span></p>
+                <p><strong class="text-gray-100">RSI Zone:</strong> <span id="market-rsi-zone"></span></p>
+            </div>
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Chart -->
+        <div id="chart-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
+            <span class="text-lg text-gray-200">📊 View Chart</span>
+            <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+        </div>
+        <div id="chart-content" class="expander-content bg-gray-800 rounded-lg">
+            <div id="candlestick-chart" class="w-full h-96 p-4"></div> <!-- Added p-4 here -->
+        </div>
+
+        <hr class="border-gray-700 my-6">
+
+        <!-- Cheat Sheet Reference -->
+        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🧠 BTC Probo Prediction Cheat Sheet Reference</h2>
+        <p class="text-gray-400 mb-4">This section provides the original guidelines for reference.</p>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ TRUST the Prediction When:</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li><strong>Condition</strong>: Time to expiry is &lt; 2 hours
+                <ul><li><strong>Why</strong>: Short-term moves are easier to project with recent trend/sentiment</li></ul>
+            </li>
+            <li><strong>Condition</strong>: BTC is trending cleanly (up or down)
+                <ul><li><strong>Why</strong>: EMA crossover + delta will align clearly</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Sentiment score is strongly positive/negative (&gt;0.2)
+                <ul><li><strong>Why</strong>: Clear market direction from sentiment</li></ul>
+            </li>
+            <li><strong>Condition</strong>: RSI is not extreme (30–70)
+                <ul><li><strong>Why</strong>: Means no strong mean-reversion counterforces</li></ul>
+            </li>
+            <li><strong>Condition</strong>: No major news expected
+                <ul><li><strong>Why</strong>: Market moves more "technically" in news-free windows</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Candle bodies are stable (not huge wicks)
+                <ul><li><strong>Why</strong>: Less noise = better delta prediction accuracy</li></ul>
+            </li>
+        </ul>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">⚠️ BE CAUTIOUS / DOUBLE-CHECK When:</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li><strong>Red Flag</strong>: Target time is &gt; 3 hours away
+                <ul><li><strong>Why</strong>: Market conditions may shift unpredictably</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: BTC just made a massive move
+                <ul><li><strong>Why</strong>: Mean reversion likely → momentum may reverse</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: RSI is &gt; 75 or &lt; 25
+                <ul><li><strong>Why</strong>: Overbought/oversold zones are prone to reversals</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Sentiment is conflicting (score ≈ 0)
+                <ul><li><strong>Why</strong>: Market indecisive — avoid betting</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Big news coming (Fed rate hike, CPI data)
+                <ul><li><strong>Why</strong>: Trends and sentiment can break instantly</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Candle volatility is high (huge wicks)
+                <ul><li><strong>Why</strong>: Delta estimates become noisy and inaccurate</li></ul>
+            </li>
+        </ul>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">🔐 Pro Tip (Original Reference):</h3>
+        <p class="text-gray-300 mb-2">If at least 3/5 “Trust” signals align → GO with the vote.</p>
+        <p class="text-gray-300 mb-4">If 2+ “Caution” flags are present → SKIP the trade or wait.</p>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li>Time: 1 hour left</li>
+            <li>BTC uptrending</li>
+            <li>EMA20 &gt; EMA50</li>
+            <li>RSI = 58</li>
+            <li>Sentiment = +0.3</li>
+            <li>→ ✅ Trust YES vote</li>
+        </ul>
+
+        <h3 class="text-xl font-semibold text-gray-200 mb-2">⚠️ Example: When to AVOID (Original Reference)</h3>
+        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+            <li>Time: 4 hours left</li>
+            <li>BTC dumped $800 in 15 mins</li>
+            <li>RSI = 22</li>
+            <li>Sentiment = 0.05</li>
+            <li>→ ⚠️ Avoid vote — unpredictable zone</li>
+        </ul>
+
+    </div>
+
+    <script>
+        // Helper function to toggle expander sections
+        function setupExpander(headerId, contentId) {
+            const header = document.getElementById(headerId);
+            const content = document.getElementById(contentId);
+            const arrow = header.querySelector('.arrow');
+
+            header.addEventListener('click', () => {
+                const isExpanded = content.classList.contains('expanded');
+                if (isExpanded) {
+                    content.classList.remove('expanded');
+                    arrow.classList.remove('expanded');
+                } else {
+                    content.classList.add('expanded');
+                    arrow.classList.add('expanded');
+                }
+            });
+        }
+
+        // Setup all expanders
+        setupExpander('prediction-summary-expander', 'prediction-summary-content');
+        setupExpander('technical-indicators-expander', 'technical-indicators-content');
+        setupExpander('chart-expander', 'chart-content');
+        setupExpander('trust-signals-expander', 'trust-signals-content');
+        setupExpander('caution-flags-expander', 'caution-flags-content');
+
+        // --- Backend API URL ---
+        // IMPORTANT: Replace this with the actual URL of your deployed Flask backend
+        // For local testing: 'http://localhost:5000'
+        const BACKEND_API_URL = 'http://localhost:5000'; // <--- CHANGE THIS FOR DEPLOYMENT!
+
+        let currentMarketConditions = {}; // Store market conditions globally
+
+        // --- UI Update Functions ---
+
+        function updateUI(currentPrice, sentimentScore, marketConditions, chartData, predictionResult = null) {
+            // Update Current Price Metric
+            document.getElementById('current-price-display').textContent = `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            // Update Technical Indicators
+            document.getElementById('metric-rsi').textContent = marketConditions.rsi ? marketConditions.rsi.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema20').textContent = marketConditions.ema_20 ? marketConditions.ema_20.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema50').textContent = marketConditions.ema_50 ? marketConditions.ema_50.toFixed(2) : 'N/A';
+            document.getElementById('market-trend').textContent = marketConditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
+            let rsiZone = '';
+            if (marketConditions.overbought) rsiZone = '🔥 Overbought';
+            else if (marketConditions.oversold) rsiZone = '🧊 Oversold';
+            else rsiZone = '✅ Neutral';
+            document.getElementById('market-rsi-zone').textContent = rsiZone;
+
+            // Update Chart
+            drawChart(chartData);
+
+            // Update Prediction Summary and Confidence Advisor if predictionResult is available
+            if (predictionResult) {
+                document.getElementById('summary-current-price').textContent = `$${predictionResult.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('summary-avg-delta').textContent = `$${predictionResult.avg_delta_per_hour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('summary-time-left').textContent = `${predictionResult.hours_remaining} hr(s)`;
+                document.getElementById('summary-projected-price').textContent = `$${predictionResult.projected_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                document.getElementById('summary-sentiment-score').textContent = predictionResult.sentiment.toFixed(2);
+                document.getElementById('summary-target-time').textContent = predictionResult.target_time;
+
+                const voteMessageDiv = document.getElementById('recommended-vote-message');
+                voteMessageDiv.innerHTML = `<div class="success-message">🧠 Recommended Vote: <strong>${predictionResult.vote}</strong></div>`;
+                voteMessageDiv.classList.remove('hidden');
+
+                // Update UI for automated signals
+                document.getElementById('trust-time').innerHTML = predictionResult.confidence_advisor.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-trend').innerHTML = predictionResult.confidence_advisor.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
+                document.getElementById('trust-sentiment').innerHTML = predictionResult.confidence_advisor.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
+                document.getElementById('trust-rsi').innerHTML = predictionResult.confidence_advisor.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+                
+                // Automated "manual check" items (Trust)
+                document.getElementById('trust-news').innerHTML = predictionResult.confidence_advisor.trust_conditions.no_major_news_expected ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting)';
+                document.getElementById('trust-stable-candles').innerHTML = predictionResult.confidence_advisor.trust_conditions.candle_bodies_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+
+
+                document.getElementById('caution-time').innerHTML = predictionResult.confidence_advisor.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-rsi').innerHTML = predictionResult.confidence_advisor.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+                document.getElementById('caution-sentiment').innerHTML = predictionResult.confidence_advisor.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
+                
+                // Automated "manual check" items (Caution)
+                document.getElementById('caution-massive-move').innerHTML = predictionResult.confidence_advisor.caution_conditions.btc_massive_move ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-big-news').innerHTML = predictionResult.confidence_advisor.caution_conditions.big_news_coming ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting)';
+                document.getElementById('caution-volatile-candles').innerHTML = predictionResult.confidence_advisor.caution_conditions.candle_volatility_high ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+
+
+                document.getElementById('total-trust-signals').textContent = predictionResult.confidence_advisor.trust_signals_count;
+                document.getElementById('total-caution-flags').textContent = predictionResult.confidence_advisor.caution_flags_count;
+
+                const proTipMessageDiv = document.getElementById('pro-tip-message');
+                let proTipClass = '';
+                let adviceMessage = predictionResult.confidence_advisor.advice_message; // Use the message from backend
+
+                if (predictionResult.confidence_advisor.trust_signals_count >= 3 && predictionResult.confidence_advisor.caution_flags_count < 2) {
+                    proTipClass = 'success-message';
+                } else if (predictionResult.confidence_advisor.caution_flags_count >= 2) {
+                    proTipClass = 'warning-message';
+                } else {
+                    proTipClass = 'info-message';
+                }
+                proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong>${adviceMessage}</strong></div>`;
+            }
+        }
+
+        // --- Charting with Plotly.js ---
+
+        function drawChart(chartData) {
+            // Ensure chartData is an array and has items
+            if (!Array.isArray(chartData) || chartData.length === 0) {
+                console.warn("No chart data available to draw.");
+                Plotly.purge('candlestick-chart'); // Clear existing chart if no data
+                return;
+            }
+
+            const timestamps = chartData.map(d => d.timestamp);
+            const openPrices = chartData.map(d => d.open);
+            const highPrices = chartData.map(d => d.high);
+            const lowPrices = chartData.map(d => d.low);
+            const closePrices = chartData.map(d => d.close);
+            const ema20 = chartData.map(d => d.EMA_20);
+            const ema50 = chartData.map(d => d.EMA_50);
+
+            const traceCandles = {
+                x: timestamps,
+                open: openPrices,
+                high: highPrices,
+                low: lowPrices,
+                close: closePrices,
+                type: 'candlestick',
+                name: 'Candles',
+                increasing: { line: { color: '#48bb78' } }, // Green for increasing
+                decreasing: { line: { color: '#ef4444' } }  // Red for decreasing
+            };
+
+            const traceEMA20 = {
+                x: timestamps,
+                y: ema20,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'EMA 20',
+                line: { color: '#63b3ed', width: 1.5 }
+            };
+
+            const traceEMA50 = {
+                x: timestamps,
+                y: ema50,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'EMA 50',
+                line: { color: '#a78bfa', width: 1.5 }
+            };
+
+            const layout = {
+                xaxis: {
+                    rangeslider: { visible: false },
+                    type: 'date',
+                    title: 'Time',
+                    tickfont: { color: '#cbd5e1' },
+                    gridcolor: '#4a5568',
+                    linecolor: '#4a5568'
+                },
+                yaxis: {
+                    title: 'Price (USDT)',
+                    tickfont: { color: '#cbd5e1' },
+                    gridcolor: '#4a5568',
+                    linecolor: '#4a5568'
+                },
+                plot_bgcolor: '#2d3748', // Chart background
+                paper_bgcolor: '#2d3748', // Paper background
+                font: { color: '#e2e8f0' },
+                margin: { l: 40, r: 40, t: 30, b: 30 },
+                showlegend: true,
+                legend: {
+                    x: 0, y: 1.15,
+                    bgcolor: 'rgba(0,0,0,0)',
+                    bordercolor: 'rgba(0,0,0,0)',
+                    font: { color: '#e2e8f0' }
+                }
+            };
+
+            Plotly.newPlot('candlestick-chart', [traceCandles, traceEMA20, traceEMA50], layout, { responsive: true, displayModeBar: true });
+        }
+
+        // --- Main Application Logic ---
+
+        async function initializeApp() {
+            document.getElementById('current-price-display').textContent = "Loading...";
+            const messageDiv = document.getElementById('recommended-vote-message');
+            messageDiv.innerHTML = ''; // Clear previous messages
+            messageDiv.classList.add('hidden');
+            document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+
+            try {
+                const response = await fetch(`${BACKEND_API_URL}/api/market_data`);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || response.statusText}`);
+                }
+                const data = await response.json();
+
+                currentMarketConditions = data.market_conditions; // Store for later use
+                updateUI(data.current_price, data.sentiment_score, data.market_conditions, data.chart_data);
+
+            } catch (error) {
+                console.error("Error fetching market data:", error);
+                const messageDiv = document.getElementById('recommended-vote-message');
+                messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
+                messageDiv.classList.remove('hidden');
+                document.getElementById('current-price-display').textContent = "$ERROR";
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('prediction-form').addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent default form submission
+
+            const targetPrice = parseFloat(document.getElementById('target-price').value);
+            const targetTimeStr = document.getElementById('target-time').value;
+
+            const messageDiv = document.getElementById('recommended-vote-message');
+            messageDiv.innerHTML = ''; // Clear previous messages
+            messageDiv.classList.add('hidden');
+            document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+
+            if (isNaN(targetPrice) || !targetTimeStr) {
+                messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
+                messageDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_API_URL}/api/predict`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        target_price: targetPrice,
+                        target_time: targetTimeStr
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Prediction failed: ${errorData.error || response.statusText}`);
+                }
+
+                const predictionResult = await response.json();
+                
+                // Re-fetch market data to ensure the UI is consistent with the latest backend state
+                // This is important because the backend's `load_initial_data` is called on each API request,
+                // so the market data might have updated between the initial `initializeApp` call and this prediction.
+                const marketDataResponse = await fetch(`${BACKEND_API_URL}/api/market_data`);
+                if (!marketDataResponse.ok) {
+                    const errorData = await marketDataResponse.json();
+                    throw new Error(`Failed to refresh market data after prediction: ${errorData.error || marketDataResponse.statusText}`);
+                }
+                const marketData = await marketDataResponse.json();
+
+                updateUI(marketData.current_price, marketData.sentiment_score, marketData.market_conditions, marketData.chart_data, predictionResult);
+
+            } catch (error) {
+                console.error("Error during prediction:", error);
+                messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
+                messageDiv.classList.remove('hidden');
+            }
+        });
+
+        // Initialize the app when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+        // Periodically update market data (e.g., every 1 minute for a more "real-time" feel)
+        setInterval(initializeApp, 60000); // 60000 ms = 1 minute
+
+    </script>
+</body>
+</html>
