@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTC Probo Predictor</title>
+    <title>Crypto Probo Predictor</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Inter Font -->
@@ -36,7 +36,7 @@
         h1, h2, h3, h4 {
             color: #cbd5e1;
         }
-        input[type="number"], input[type="time"], button {
+        input[type="number"], input[type="time"], button, select {
             background-color: #2d3748;
             border: 1px solid #4a5568;
             color: #e2e8f0;
@@ -44,7 +44,7 @@
             border-radius: 0.5rem;
             transition: all 0.2s ease-in-out;
         }
-        input[type="number"]:focus, input[type="time"]:focus, button:focus {
+        input[type="number"]:focus, input[type="time"]:focus, button:focus, select:focus {
             outline: none;
             border-color: #63b3ed;
             box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
@@ -77,12 +77,11 @@
         .expander-content {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.3s ease-out, padding 0.3s ease-out; /* Add padding to transition */
+            transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out; /* Smooth transition for max-height and padding */
             padding: 0 1rem; /* Initial padding, will be adjusted by JS if needed */
         }
         .expander-content.expanded {
             max-height: 9999px; /* Ensures content fully expands */
-            transition: max-height 0.5s ease-in, padding 0.5s ease-in; /* Add padding to transition */
             padding: 1rem; /* Apply padding when expanded */
         }
         .arrow {
@@ -135,16 +134,30 @@
             border-radius: 0.5rem;
             margin-top: 1rem;
         }
-        /* Removed .manual-check-item and associated checkbox styles */
     </style>
 </head>
 <body class="antialiased">
     <div class="container">
-        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6">📲 BTC Probo Predictor</h1>
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6">📲 Crypto Probo Predictor</h1>
 
-        <!-- BTC Price Metric -->
+        <!-- Currency Selector -->
+        <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
+            <span class="text-xl font-medium text-gray-400 mb-2 md:mb-0">Select Cryptocurrency:</span>
+            <div class="flex space-x-4">
+                <label class="inline-flex items-center">
+                    <input type="radio" class="form-radio text-blue-500" name="currency" value="BTC" checked>
+                    <span class="ml-2 text-gray-200">Bitcoin (BTC)</span>
+                </label>
+                <label class="inline-flex items-center">
+                    <input type="radio" class="form-radio text-blue-500" name="currency" value="ETH">
+                    <span class="ml-2 text-gray-200">Ethereum (ETH)</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Current Price Metric -->
         <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 flex justify-between items-center">
-            <span class="text-xl font-medium text-gray-400">💰 BTC Price</span>
+            <span class="text-xl font-medium text-gray-400">💰 Current Price (<span id="current-currency-symbol">BTC</span>)</span>
             <span id="current-price-display" class="metric-value">$0.00</span>
         </div>
 
@@ -197,7 +210,7 @@
             <div id="trust-signals-content" class="expander-content bg-gray-800 rounded-lg">
                 <ul class="list-disc list-inside text-gray-300 space-y-1 p-4">
                     <li>Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
-                    <li>BTC is trending cleanly (up or down): <span id="trust-trend"></span></li>
+                    <li><span id="trust-trend-text">BTC</span> is trending cleanly (up or down): <span id="trust-trend"></span></li>
                     <li>Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
                     <li>RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
                     <li>No major news expected: <span id="trust-news"></span></li>
@@ -212,7 +225,7 @@
             <div id="caution-flags-content" class="expander-content bg-gray-800 rounded-lg">
                 <ul class="list-disc list-inside text-gray-300 space-y-1 p-4">
                     <li>Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
-                    <li>BTC just made a massive move: <span id="caution-massive-move"></span></li>
+                    <li><span id="caution-massive-move-text">BTC</span> just made a massive move: <span id="caution-massive-move"></span></li>
                     <li>RSI is &gt; 75 or &lt; 25: <span id="caution-rsi"></span></li>
                     <li>Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
                     <li>Big news coming (Fed rate hike, CPI data): <span id="caution-big-news"></span></li>
@@ -268,7 +281,7 @@
         <hr class="border-gray-700 my-6">
 
         <!-- Cheat Sheet Reference -->
-        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🧠 BTC Probo Prediction Cheat Sheet Reference</h2>
+        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🧠 Crypto Probo Prediction Cheat Sheet Reference</h2>
         <p class="text-gray-400 mb-4">This section provides the original guidelines for reference.</p>
 
         <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ TRUST the Prediction When:</h3>
@@ -316,7 +329,7 @@
         </ul>
 
         <h3 class="text-xl font-semibold text-gray-200 mb-2">🔐 Pro Tip (Original Reference):</h3>
-        <p class="text-gray-300 mb-2">If at least 3/5 “Trust” signals align → GO with the vote.</p>
+        <p class="text-gray-300 mb-2">If at least 3/6 “Trust” signals align → GO with the vote.</p>
         <p class="text-gray-300 mb-4">If 2+ “Caution” flags are present → SKIP the trade or wait.</p>
 
         <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
@@ -360,38 +373,48 @@
         }
 
         // Setup all expanders
-        setupExpander('prediction-summary-expander', 'prediction-summary-content');
-        setupExpander('technical-indicators-expander', 'technical-indicators-content');
-        setupExpander('chart-expander', 'chart-content');
-        setupExpander('trust-signals-expander', 'trust-signals-content');
-        setupExpander('caution-flags-expander', 'caution-flags-content');
+        document.addEventListener('DOMContentLoaded', () => {
+            setupExpander('prediction-summary-expander', 'prediction-summary-content');
+            setupExpander('technical-indicators-expander', 'technical-indicators-content');
+            setupExpander('chart-expander', 'chart-content');
+            setupExpander('trust-signals-expander', 'trust-signals-content');
+            setupExpander('caution-flags-expander', 'caution-flags-content');
+        });
 
         // --- Backend API URL ---
-        // IMPORTANT: Replace this with the actual URL of your deployed Flask backend
-        // For local testing: 'http://localhost:5000'
-        const BACKEND_API_URL = 'https://html-probo-predictor-website.onrender.com/'; // <--- CHANGE THIS FOR DEPLOYMENT!
+        const BACKEND_API_URL = 'http://localhost:5000'; // IMPORTANT: Change this for deployment!
 
-        let currentMarketConditions = {}; // Store market conditions globally
+        // Global data storage for both BTC and ETH
+        let allMarketData = {
+            BTC: { current_price: 0.0, sentiment_score: 0.0, market_conditions: {}, chart_data: [] },
+            ETH: { current_price: 0.0, sentiment_score: 0.0, market_conditions: {}, chart_data: [] }
+        };
+        let selectedCurrency = 'BTC'; // Default selected currency
 
         // --- UI Update Functions ---
 
-        function updateUI(currentPrice, sentimentScore, marketConditions, chartData, predictionResult = null) {
+        function updateUI(currencyData, predictionResult = null) {
+            const { current_price, sentiment_score, market_conditions, chart_data } = currencyData;
+
+            // Update currency symbol display
+            document.getElementById('current-currency-symbol').textContent = selectedCurrency;
+
             // Update Current Price Metric
-            document.getElementById('current-price-display').textContent = `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            document.getElementById('current-price-display').textContent = `$${current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
             // Update Technical Indicators
-            document.getElementById('metric-rsi').textContent = marketConditions.rsi ? marketConditions.rsi.toFixed(2) : 'N/A';
-            document.getElementById('metric-ema20').textContent = marketConditions.ema_20 ? marketConditions.ema_20.toFixed(2) : 'N/A';
-            document.getElementById('metric-ema50').textContent = marketConditions.ema_50 ? marketConditions.ema_50.toFixed(2) : 'N/A';
-            document.getElementById('market-trend').textContent = marketConditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
+            document.getElementById('metric-rsi').textContent = market_conditions.rsi ? market_conditions.rsi.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema20').textContent = market_conditions.ema_20 ? market_conditions.ema_20.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema50').textContent = market_conditions.ema_50 ? market_conditions.ema_50.toFixed(2) : 'N/A';
+            document.getElementById('market-trend').textContent = market_conditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
             let rsiZone = '';
-            if (marketConditions.overbought) rsiZone = '🔥 Overbought';
-            else if (marketConditions.oversold) rsiZone = '🧊 Oversold';
+            if (market_conditions.overbought) rsiZone = '🔥 Overbought';
+            else if (market_conditions.oversold) rsiZone = '🧊 Oversold';
             else rsiZone = '✅ Neutral';
             document.getElementById('market-rsi-zone').textContent = rsiZone;
 
             // Update Chart
-            drawChart(chartData);
+            drawChart(chart_data);
 
             // Update Prediction Summary and Confidence Advisor if predictionResult is available
             if (predictionResult) {
@@ -406,52 +429,55 @@
                 voteMessageDiv.innerHTML = `<div class="success-message">🧠 Recommended Vote: <strong>${predictionResult.vote}</strong></div>`;
                 voteMessageDiv.classList.remove('hidden');
 
-                // Update UI for automated signals
-                document.getElementById('trust-time').innerHTML = predictionResult.confidence_advisor.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-trend').innerHTML = predictionResult.confidence_advisor.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
-                document.getElementById('trust-sentiment').innerHTML = predictionResult.confidence_advisor.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
-                document.getElementById('trust-rsi').innerHTML = predictionResult.confidence_advisor.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
+                const confidence = predictionResult.confidence_advisor;
                 
-                // Automated "manual check" items (Trust)
-                document.getElementById('trust-news').innerHTML = predictionResult.confidence_advisor.trust_conditions.no_major_news_expected ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting)';
-                document.getElementById('trust-stable-candles').innerHTML = predictionResult.confidence_advisor.trust_conditions.candle_bodies_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                // Update Trust Signals
+                document.getElementById('trust-time').innerHTML = confidence.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-trend-text').textContent = selectedCurrency; // Update text for trend
+                document.getElementById('trust-trend').innerHTML = confidence.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
+                document.getElementById('trust-sentiment').innerHTML = confidence.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
+                document.getElementById('trust-rsi').innerHTML = confidence.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
+                document.getElementById('trust-news').innerHTML = confidence.trust_conditions.no_major_news_expected ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting)';
+                document.getElementById('trust-stable-candles').innerHTML = confidence.trust_conditions.candle_bodies_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+
+                // Update Caution Flags
+                document.getElementById('caution-time').innerHTML = confidence.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-massive-move-text').textContent = selectedCurrency; // Update text for massive move
+                document.getElementById('caution-massive-move').innerHTML = confidence.caution_conditions.btc_massive_move ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-rsi').innerHTML = confidence.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
+                document.getElementById('caution-sentiment').innerHTML = confidence.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
+                document.getElementById('caution-big-news').innerHTML = confidence.caution_conditions.big_news_coming ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting)';
+                document.getElementById('caution-volatile-candles').innerHTML = confidence.caution_conditions.candle_volatility_high ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
 
 
-                document.getElementById('caution-time').innerHTML = predictionResult.confidence_advisor.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-rsi').innerHTML = predictionResult.confidence_advisor.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${marketConditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${marketConditions.rsi.toFixed(2)})`;
-                document.getElementById('caution-sentiment').innerHTML = predictionResult.confidence_advisor.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentimentScore.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentimentScore.toFixed(2)})`;
-                
-                // Automated "manual check" items (Caution)
-                document.getElementById('caution-massive-move').innerHTML = predictionResult.confidence_advisor.caution_conditions.btc_massive_move ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-big-news').innerHTML = predictionResult.confidence_advisor.caution_conditions.big_news_coming ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting)';
-                document.getElementById('caution-volatile-candles').innerHTML = predictionResult.confidence_advisor.caution_conditions.candle_volatility_high ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-
-
-                document.getElementById('total-trust-signals').textContent = predictionResult.confidence_advisor.trust_signals_count;
-                document.getElementById('total-caution-flags').textContent = predictionResult.confidence_advisor.caution_flags_count;
+                document.getElementById('total-trust-signals').textContent = confidence.trust_signals_count;
+                document.getElementById('total-caution-flags').textContent = confidence.caution_flags_count;
 
                 const proTipMessageDiv = document.getElementById('pro-tip-message');
                 let proTipClass = '';
-                let adviceMessage = predictionResult.confidence_advisor.advice_message; // Use the message from backend
+                let adviceMessage = confidence.advice_message;
 
-                if (predictionResult.confidence_advisor.trust_signals_count >= 3 && predictionResult.confidence_advisor.caution_flags_count < 2) {
+                if (confidence.trust_signals_count >= 3 && confidence.caution_flags_count < 2) {
                     proTipClass = 'success-message';
-                } else if (predictionResult.confidence_advisor.caution_flags_count >= 2) {
+                } else if (confidence.caution_flags_count >= 2) {
                     proTipClass = 'warning-message';
                 } else {
                     proTipClass = 'info-message';
                 }
                 proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong>${adviceMessage}</strong></div>`;
+            } else {
+                // Clear prediction results if no prediction is made
+                document.getElementById('recommended-vote-message').classList.add('hidden');
+                document.getElementById('pro-tip-message').innerHTML = '';
             }
         }
 
         // --- Charting with Plotly.js ---
 
         function drawChart(chartData) {
-            // Ensure chartData is an array and has items
             if (!Array.isArray(chartData) || chartData.length === 0) {
                 console.warn("No chart data available to draw.");
-                Plotly.purge('candlestick-chart'); // Clear existing chart if no data
+                Plotly.purge('candlestick-chart');
                 return;
             }
 
@@ -471,8 +497,8 @@
                 close: closePrices,
                 type: 'candlestick',
                 name: 'Candles',
-                increasing: { line: { color: '#48bb78' } }, // Green for increasing
-                decreasing: { line: { color: '#ef4444' } }  // Red for decreasing
+                increasing: { line: { color: '#48bb78' } },
+                decreasing: { line: { color: '#ef4444' } }
             };
 
             const traceEMA20 = {
@@ -508,8 +534,8 @@
                     gridcolor: '#4a5568',
                     linecolor: '#4a5568'
                 },
-                plot_bgcolor: '#2d3748', // Chart background
-                paper_bgcolor: '#2d3748', // Paper background
+                plot_bgcolor: '#2d3748',
+                paper_bgcolor: '#2d3748',
                 font: { color: '#e2e8f0' },
                 margin: { l: 40, r: 40, t: 30, b: 30 },
                 showlegend: true,
@@ -529,9 +555,9 @@
         async function initializeApp() {
             document.getElementById('current-price-display').textContent = "Loading...";
             const messageDiv = document.getElementById('recommended-vote-message');
-            messageDiv.innerHTML = ''; // Clear previous messages
+            messageDiv.innerHTML = '';
             messageDiv.classList.add('hidden');
-            document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+            document.getElementById('pro-tip-message').innerHTML = '';
 
             try {
                 const response = await fetch(`${BACKEND_API_URL}/api/market_data`);
@@ -539,10 +565,10 @@
                     const errorData = await response.json();
                     throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || response.statusText}`);
                 }
-                const data = await response.json();
-
-                currentMarketConditions = data.market_conditions; // Store for later use
-                updateUI(data.current_price, data.sentiment_score, data.market_conditions, data.chart_data);
+                allMarketData = await response.json();
+                
+                // Update UI with data for the currently selected currency
+                updateUI(allMarketData[selectedCurrency]);
 
             } catch (error) {
                 console.error("Error fetching market data:", error);
@@ -555,15 +581,16 @@
 
         // Handle form submission
         document.getElementById('prediction-form').addEventListener('submit', async (event) => {
-            event.preventDefault(); // Prevent default form submission
+            event.preventDefault();
 
             const targetPrice = parseFloat(document.getElementById('target-price').value);
             const targetTimeStr = document.getElementById('target-time').value;
+            const selectedCurrencyForPrediction = document.querySelector('input[name="currency"]:checked').value;
 
             const messageDiv = document.getElementById('recommended-vote-message');
-            messageDiv.innerHTML = ''; // Clear previous messages
+            messageDiv.innerHTML = '';
             messageDiv.classList.add('hidden');
-            document.getElementById('pro-tip-message').innerHTML = ''; // Clear pro tip
+            document.getElementById('pro-tip-message').innerHTML = '';
 
             if (isNaN(targetPrice) || !targetTimeStr) {
                 messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
@@ -579,7 +606,8 @@
                     },
                     body: JSON.stringify({
                         target_price: targetPrice,
-                        target_time: targetTimeStr
+                        target_time: targetTimeStr,
+                        currency: selectedCurrencyForPrediction
                     })
                 });
 
@@ -590,23 +618,31 @@
 
                 const predictionResult = await response.json();
                 
-                // Re-fetch market data to ensure the UI is consistent with the latest backend state
-                // This is important because the backend's `load_initial_data` is called on each API request,
-                // so the market data might have updated between the initial `initializeApp` call and this prediction.
+                // Re-fetch all market data to ensure the UI is consistent with the latest backend state
                 const marketDataResponse = await fetch(`${BACKEND_API_URL}/api/market_data`);
                 if (!marketDataResponse.ok) {
                     const errorData = await marketDataResponse.json();
                     throw new Error(`Failed to refresh market data after prediction: ${errorData.error || marketDataResponse.statusText}`);
                 }
-                const marketData = await marketDataResponse.json();
-
-                updateUI(marketData.current_price, marketData.sentiment_score, marketData.market_conditions, marketData.chart_data, predictionResult);
+                allMarketData = await marketDataResponse.json();
+                
+                // Update UI with the prediction result for the *selected* currency
+                updateUI(allMarketData[selectedCurrency], predictionResult);
 
             } catch (error) {
                 console.error("Error during prediction:", error);
                 messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
                 messageDiv.classList.remove('hidden');
             }
+        });
+
+        // Handle currency selection change
+        document.querySelectorAll('input[name="currency"]').forEach(radio => {
+            radio.addEventListener('change', (event) => {
+                selectedCurrency = event.target.value;
+                // Update UI immediately with the newly selected currency's data
+                updateUI(allMarketData[selectedCurrency]);
+            });
         });
 
         // Initialize the app when the DOM is fully loaded
