@@ -10,15 +10,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Plotly.js CDN for charting -->
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <!-- Favicon links (ensure these files are in your root directory) -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
+    <link rel="shortcut icon" href="/favicon.ico"> <!-- Generic favicon -->
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0f172a; /* Dark background */
-            color: #e2e8f0; /* Light text */
+            background-color: #000000; /* Black background */
+            color: #DAA520; /* Goldenrod text for general content */
             margin: 0;
             padding: 0;
             display: flex;
@@ -28,45 +34,50 @@
             overflow-y: auto; /* Allow scrolling */
         }
         .container {
-            background-color: #1a202c; /* Slightly lighter dark background for container */
+            background-color: #1a1a1a; /* Slightly lighter black for container */
             padding: 1.5rem;
             border-radius: 1rem;
-            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
             width: 100%;
             max-width: 800px; /* Max width for desktop */
             margin: 1rem; /* Margin for mobile and desktop */
             box-sizing: border-box;
         }
         h1, h2, h3, h4 {
-            color: #cbd5e1;
+            color: #FFD700; /* Gold for headings */
         }
         input[type="number"], input[type="time"], button, select {
-            background-color: #2d3748;
-            border: 1px solid #4a5568;
-            color: #e2e8f0;
+            background-color: #222222; /* Darker grey for inputs */
+            border: 1px solid #444444; /* Darker grey border */
+            color: #FFD700; /* Gold text */
             padding: 0.75rem 1rem;
             border-radius: 0.5rem;
             transition: all 0.2s ease-in-out;
         }
         input[type="number"]:focus, input[type="time"]:focus, button:focus, select:focus {
             outline: none;
-            border-color: #63b3ed;
-            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+            border-color: #FFD700; /* Gold border on focus */
+            box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.3); /* Gold shadow on focus */
         }
         button {
             cursor: pointer;
             font-weight: 600;
-            background-color: #4299e1;
-            border-color: #4299e1;
+            background-color: #FFD700; /* Gold button */
+            border-color: #FFD700;
+            color: #000000; /* Black text on gold button */
+            display: flex; /* Enable flex for icon and text alignment */
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem; /* Space between icon and text */
         }
         button:hover {
-            background-color: #3182ce;
-            border-color: #3182ce;
+            background-color: #DAA520; /* Darker gold on hover */
+            border-color: #DAA520;
         }
         .metric-value {
             font-size: 2.25rem; /* text-4xl */
             font-weight: 700; /* font-bold */
-            color: #48bb78; /* green-500 */
+            color: #FFD700; /* Gold */
         }
         .expander-header {
             cursor: pointer;
@@ -75,18 +86,23 @@
             align-items: center;
             padding: 0.75rem 0;
             font-weight: 600;
-            color: #94a3b8;
-            border-bottom: 1px solid #4a5568;
+            color: #DAA520; /* Goldenrod */
+            border-bottom: 1px solid #444444;
+            transition: background-color 0.2s ease-in-out; /* Smooth hover */
+        }
+        .expander-header:hover {
+            background-color: #222222; /* Darker grey on hover */
+            border-radius: 0.5rem; /* Apply border-radius on hover */
         }
         .expander-content {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out; /* Smooth transition for max-height and padding */
-            padding: 0 1rem; /* Initial padding, will be adjusted by JS if needed */
+            transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+            padding: 0 1rem;
         }
         .expander-content.expanded {
-            max-height: 9999px; /* Ensures content fully expands */
-            padding: 1rem; /* Apply padding when expanded */
+            max-height: 9999px;
+            padding: 1rem;
         }
         .arrow {
             transition: transform 0.3s ease-out;
@@ -95,80 +111,109 @@
             transform: rotate(90deg);
         }
         .plotly-graph-div {
-            border-radius: 0.75rem; /* rounded-xl */
-            overflow: hidden; /* Ensure content respects border-radius */
-            background-color: #2d3748; /* Darker background for chart area */
+            border-radius: 0.75rem;
+            overflow: hidden;
+            background-color: #222222; /* Darker background for chart area */
         }
         .plotly .modebar {
-            background-color: #2d3748 !important; /* Darker background for plotly modebar */
+            background-color: #222222 !important;
             border-radius: 0.5rem;
             padding: 0.25rem;
         }
         .plotly .modebar-btn {
-            color: #cbd5e1 !important;
+            color: #FFD700 !important;
         }
         .plotly .modebar-btn:hover {
-            background-color: #4a5568 !important;
+            background-color: #444444 !important;
         }
+        /* Custom message boxes for gold/black theme */
         .success-message {
-            background-color: #22543d; /* green-900 */
-            color: #9ae6b4; /* green-200 */
+            background-color: #2a3620; /* Darker green */
+            color: #d4edda; /* Lighter green */
             padding: 1rem;
             border-radius: 0.5rem;
             margin-top: 1rem;
         }
         .warning-message {
-            background-color: #7b341e; /* orange-900 */
-            color: #fbd38d; /* orange-200 */
+            background-color: #4d3a20; /* Darker orange */
+            color: #fce8d4; /* Lighter orange */
             padding: 1rem;
             border-radius: 0.5rem;
             margin-top: 1rem;
         }
         .info-message {
-            background-color: #2a4365; /* blue-900 */
-            color: #90cdf4; /* blue-200 */
+            background-color: #20364d; /* Darker blue */
+            color: #d4e8fc; /* Lighter blue */
             padding: 1rem;
             border-radius: 0.5rem;
             margin-top: 1rem;
         }
         .error-message {
-            background-color: #742a2a; /* red-900 */
-            color: #feb2b2; /* red-200 */
+            background-color: #4d2020; /* Darker red */
+            color: #fcd4d4; /* Lighter red */
             padding: 1rem;
             border-radius: 0.5rem;
             margin-top: 1rem;
         }
+        /* Loading spinner */
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #FFD700; /* Gold */
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Text colors for YES/NO in confidence advisor */
+        .text-green-400 { color: #9ae6b4; } /* Adjusted green for better contrast */
+        .text-red-400 { color: #feb2b2; } /* Adjusted red for better contrast */
     </style>
 </head>
 <body class="antialiased">
     <div class="container">
-        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6">📲 Crypto Probo Predictor</h1>
+        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6">
+            <i class="fas fa-chart-line text-gold-500 mr-3"></i> Crypto Probo Predictor
+        </h1>
 
         <!-- Currency Selector -->
-        <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
-            <span class="text-xl font-medium text-gray-400 mb-2 md:mb-0">Select Cryptocurrency:</span>
+        <div class="bg-gray-900 p-4 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
+            <span class="text-xl font-medium text-gray-400 mb-2 md:mb-0">
+                <i class="fas fa-coins text-gold-300 mr-2"></i> Select Cryptocurrency:
+            </span>
             <div class="flex space-x-4">
                 <label class="inline-flex items-center">
-                    <input type="radio" class="form-radio text-blue-500" name="currency" value="BTC" checked>
-                    <span class="ml-2 text-gray-200">Bitcoin (BTC)</span>
+                    <input type="radio" class="form-radio text-yellow-500" name="currency" value="BTC" checked>
+                    <span class="ml-2 text-gold-300"><i class="fab fa-btc mr-1"></i> Bitcoin (BTC)</span>
                 </label>
                 <label class="inline-flex items-center">
-                    <input type="radio" class="form-radio text-blue-500" name="currency" value="ETH">
-                    <span class="ml-2 text-gray-200">Ethereum (ETH)</span>
+                    <input type="radio" class="form-radio text-yellow-500" name="currency" value="ETH">
+                    <span class="ml-2 text-gold-300"><i class="fab fa-ethereum mr-1"></i> Ethereum (ETH)</span>
                 </label>
             </div>
         </div>
 
         <!-- Current Price Metric -->
-        <div class="bg-gray-800 p-4 rounded-lg shadow-md mb-6 flex justify-between items-center">
-            <span class="text-xl font-medium text-gray-400">💰 Current Price (<span id="current-currency-symbol">BTC</span>)</span>
+        <div class="bg-gray-900 p-4 rounded-lg shadow-md mb-6 flex justify-between items-center">
+            <span class="text-xl font-medium text-gray-400">
+                <i class="fas fa-sack-dollar text-gold-300 mr-2"></i> Current Price (<span id="current-currency-symbol">BTC</span>)
+            </span>
             <span id="current-price-display" class="metric-value">$0.00</span>
+            <div id="loading-spinner" class="loader hidden"></div>
         </div>
 
-        <hr class="border-gray-700 my-6">
+        <hr class="border-gray-800 my-6">
 
         <!-- Prediction Form -->
-        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🔮 Predict Probo Outcome</h2>
+        <h2 class="text-2xl font-semibold mb-4 text-gold-100">
+            <i class="fas fa-crystal-ball text-gold-500 mr-2"></i> Predict Probo Outcome
+        </h2>
         <form id="prediction-form" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -178,25 +223,30 @@
                 <div>
                     <label for="target-time" class="block text-sm font-medium text-gray-400 mb-1">Target Time (HH:MM in IST)</label>
                     <input type="time" id="target-time" value="23:00" class="w-full rounded-lg px-4 py-2">
+                    <p class="text-xs text-gray-500 mt-1">Current IST: <span id="current-ist-time"></span></p>
                 </div>
             </div>
-            <button type="submit" class="w-full py-2 rounded-lg text-white font-semibold">Get Recommendation</button>
+            <button type="submit" class="w-full py-2 rounded-lg text-black font-semibold">
+                Get Recommendation <div id="prediction-spinner" class="loader hidden"></div>
+            </button>
         </form>
 
         <div id="prediction-results" class="mt-6 space-y-4">
             <!-- Prediction Summary -->
-            <div id="prediction-summary-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
-                <span class="text-lg text-gray-200">📊 Prediction Summary</span>
-                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            <div id="prediction-summary-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-chart-pie text-gold-300 mr-2"></i> Prediction Summary
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
-            <div id="prediction-summary-content" class="expander-content bg-gray-800 rounded-lg">
-                <div class="p-4"> <!-- Inner div for padding -->
-                    <p class="text-gray-300"><strong class="text-gray-100">Current Price:</strong> <span id="summary-current-price">$0.00</span></p>
-                    <p class="text-gray-300"><strong class="text-gray-100">Avg Δ/hr:</strong> <span id="summary-avg-delta">$0.00</span></p>
-                    <p class="text-gray-300"><strong class="text-gray-100">Time Left:</strong> <span id="summary-time-left">0 hr(s)</span></p>
-                    <p class="text-gray-300"><strong class="text-gray-100">Projected Price:</strong> <span id="summary-projected-price">$0.00</span></p>
-                    <p class="text-gray-300"><strong class="text-gray-100">Sentiment Score:</strong> <span id="summary-sentiment-score">0.00</span></p>
-                    <p class="text-gray-300"><strong class="text-gray-100">Target Time (IST):</strong> <span id="summary-target-time">HH:MM</span></p>
+            <div id="prediction-summary-content" class="expander-content bg-gray-900 rounded-lg">
+                <div class="p-4">
+                    <p class="text-gold-300"><strong class="text-gold-100">Current Price:</strong> <span id="summary-current-price">$0.00</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Avg Δ/hr:</strong> <span id="summary-avg-delta">$0.00</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Time Left:</strong> <span id="summary-time-left">0 hr(s)</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Projected Price:</strong> <span id="summary-projected-price">$0.00</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Sentiment Score:</strong> <span id="summary-sentiment-score">0.00</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Target Time (IST):</strong> <span id="summary-target-time">HH:MM</span></p>
                 </div>
             </div>
 
@@ -204,92 +254,133 @@
             <div id="recommended-vote-message" class="hidden"></div>
 
             <!-- Prediction Confidence Advisor -->
-            <hr class="border-gray-700 my-6">
-            <h3 class="text-xl font-semibold text-gray-200">💡 Prediction Confidence Advisor</h3>
+            <hr class="border-gray-800 my-6">
+            <h3 class="text-xl font-semibold text-gold-100">
+                <i class="fas fa-lightbulb text-gold-500 mr-2"></i> Prediction Confidence Advisor
+            </h3>
 
-            <div id="trust-signals-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
-                <span class="text-lg text-gray-200">✅ Trust Signals</span>
-                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            <div id="trust-signals-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-shield-alt text-green-400 mr-2"></i> Trust Signals
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
-            <div id="trust-signals-content" class="expander-content bg-gray-800 rounded-lg">
-                <ul class="list-disc list-inside text-gray-300 space-y-1 p-4">
+            <div id="trust-signals-content" class="expander-content bg-gray-900 rounded-lg">
+                <ul class="list-disc list-inside text-gold-300 space-y-1 p-4">
                     <li>Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
                     <li><span id="trust-trend-text">BTC</span> is trending cleanly (up or down): <span id="trust-trend"></span></li>
                     <li>Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
                     <li>RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
                     <li>No major news expected: <span id="trust-news"></span></li>
                     <li>Candle bodies are stable (not huge wicks): <span id="trust-stable-candles"></span></li>
+                    <li>MACD shows bullish crossover: <span id="trust-macd-bullish"></span></li>
+                    <li>Stochastic is oversold (potential rebound): <span id="trust-stoch-oversold"></span></li>
+                    <li>Price near lower Bollinger Band (potential support): <span id="trust-bb-lower"></span></li>
+                    <li>No massive move recently: <span id="trust-no-massive-move"></span></li>
+                    <li>Bollinger Bands are stable (not squeezing/expanding): <span id="trust-bb-stable"></span></li>
+                    <li>No recent volume spike: <span id="trust-no-volume-spike"></span></li>
                 </ul>
             </div>
 
-            <div id="caution-flags-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
-                <span class="text-lg text-gray-200">⚠️ Caution Flags</span>
-                <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            <div id="caution-flags-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-exclamation-triangle text-red-400 mr-2"></i> Caution Flags
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
-            <div id="caution-flags-content" class="expander-content bg-gray-800 rounded-lg">
-                <ul class="list-disc list-inside text-gray-300 space-y-1 p-4">
+            <div id="caution-flags-content" class="expander-content bg-gray-900 rounded-lg">
+                <ul class="list-disc list-inside text-gold-300 space-y-1 p-4">
                     <li>Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
                     <li><span id="caution-massive-move-text">BTC</span> just made a massive move: <span id="caution-massive-move"></span></li>
                     <li>RSI is &gt; 75 or &lt; 25: <span id="caution-rsi"></span></li>
                     <li>Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
                     <li>Big news coming (Fed rate hike, CPI data): <span id="caution-big-news"></span></li>
                     <li>Candle volatility is high (huge wicks): <span id="caution-volatile-candles"></span></li>
+                    <li>MACD shows bearish crossover: <span id="caution-macd-bearish"></span></li>
+                    <li>Stochastic is overbought (potential reversal): <span id="caution-stoch-overbought"></span></li>
+                    <li>Price near upper Bollinger Band or BB contracting: <span id="caution-bb-upper-contracting"></span></li>
+                    <li>Bollinger Bands are volatile (squeezing/expanding): <span id="caution-bb-volatile"></span></li>
+                    <li>Recent volume spike: <span id="caution-volume-spike"></span></li>
                 </ul>
             </div>
 
-            <hr class="border-gray-700 my-6">
-            <p class="text-gray-300"><strong class="text-gray-100">Total Trust Signals Met:</strong> <span id="total-trust-signals">0</span></p>
-            <p class="text-gray-300"><strong class="text-gray-100">Total Caution Flags Present:</strong> <span id="total-caution-flags">0</span></p>
+            <hr class="border-gray-800 my-6">
+            <p class="text-gold-300"><strong class="text-gold-100">Total Trust Signals Met:</strong> <span id="total-trust-signals">0</span></p>
+            <p class="text-gold-300"><strong class="text-gold-100">Total Caution Flags Present:</strong> <span id="total-caution-flags">0</span></p>
             <div id="pro-tip-message" class="mt-4"></div>
         </div>
 
-        <hr class="border-gray-700 my-6">
+        <hr class="border-gray-800 my-6">
 
         <!-- Technical Indicators -->
-        <div id="technical-indicators-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
-            <span class="text-lg text-gray-200">🧪 Technical Indicators</span>
-            <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+        <div id="technical-indicators-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <span class="text-lg text-gold-100">
+                <i class="fas fa-flask text-gold-300 mr-2"></i> Technical Indicators
+            </span>
+            <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
         </div>
-        <div id="technical-indicators-content" class="expander-content bg-gray-800 rounded-lg">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center p-4"> <!-- Added p-4 here -->
-                <div class="p-3 bg-gray-700 rounded-lg">
+        <div id="technical-indicators-content" class="expander-content bg-gray-900 rounded-lg">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center p-4">
+                <div class="p-3 bg-gray-800 rounded-lg">
                     <div class="text-sm text-gray-400">RSI</div>
-                    <div id="metric-rsi" class="text-xl font-bold text-green-400">0.00</div>
+                    <div id="metric-rsi" class="text-xl font-bold text-gold-300">0.00</div>
                 </div>
-                <div class="p-3 bg-gray-700 rounded-lg">
+                <div class="p-3 bg-gray-800 rounded-lg">
                     <div class="text-sm text-gray-400">EMA 20</div>
-                    <div id="metric-ema20" class="text-xl font-bold text-blue-400">0.00</div>
+                    <div id="metric-ema20" class="text-xl font-bold text-gold-300">0.00</div>
                 </div>
-                <div class="p-3 bg-gray-700 rounded-lg">
+                <div class="p-3 bg-gray-800 rounded-lg">
                     <div class="text-sm text-gray-400">EMA 50</div>
-                    <div id="metric-ema50" class="text-xl font-bold text-purple-400">0.00</div>
+                    <div id="metric-ema50" class="text-xl font-bold text-gold-300">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-800 rounded-lg">
+                    <div class="text-sm text-gray-400">MACD</div>
+                    <div id="metric-macd" class="text-xl font-bold text-gold-300">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-800 rounded-lg">
+                    <div class="text-sm text-gray-400">Stoch %K</div>
+                    <div id="metric-stochk" class="text-xl font-bold text-gold-300">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-800 rounded-lg">
+                    <div class="text-sm text-gray-400">Stoch %D</div>
+                    <div id="metric-stochd" class="text-xl font-bold text-gold-300">0.00</div>
+                </div>
+                <div class="p-3 bg-gray-800 rounded-lg col-span-1 md:col-span-3">
+                    <div class="text-sm text-gray-400">Bollinger Bands (Upper/Mid/Lower)</div>
+                    <div id="metric-bb" class="text-xl font-bold text-gold-300">0.00 / 0.00 / 0.00</div>
                 </div>
             </div>
-            <div class="mt-4 text-gray-300 p-4 pt-0"> <!-- Added p-4 here, pt-0 to prevent double padding -->
-                <p><strong class="text-gray-100">Trend:</strong> <span id="market-trend"></span></p>
-                <p><strong class="text-gray-100">RSI Zone:</strong> <span id="market-rsi-zone"></span></p>
+            <div class="mt-4 text-gold-300 p-4 pt-0">
+                <p><strong class="text-gold-100">Trend:</strong> <span id="market-trend"></span></p>
+                <p><strong class="text-gold-100">RSI Zone:</strong> <span id="market-rsi-zone"></span></p>
+                <p><strong class="text-gold-100">Stochastic Zone:</strong> <span id="market-stoch-zone"></span></p>
+                <p><strong class="text-gold-100">Bollinger Band Width:</strong> <span id="metric-bb-width"></span></p>
             </div>
         </div>
 
-        <hr class="border-gray-700 my-6">
+        <hr class="border-gray-800 my-6">
 
         <!-- Chart -->
-        <div id="chart-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200">
-            <span class="text-lg text-gray-200">📊 View Chart</span>
-            <svg class="arrow w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+        <div id="chart-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <span class="text-lg text-gold-100">
+                <i class="fas fa-chart-area text-gold-300 mr-2"></i> View Chart
+            </span>
+            <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
         </div>
-        <div id="chart-content" class="expander-content bg-gray-800 rounded-lg">
-            <div id="candlestick-chart" class="w-full h-96 p-4"></div> <!-- Added p-4 here -->
+        <div id="chart-content" class="expander-content bg-gray-900 rounded-lg">
+            <div id="candlestick-chart" class="w-full h-[600px] p-4"></div> <!-- Increased height for multiple subplots -->
         </div>
 
-        <hr class="border-gray-700 my-6">
+        <hr class="border-gray-800 my-6">
 
         <!-- Cheat Sheet Reference -->
-        <h2 class="text-2xl font-semibold mb-4 text-gray-200">🧠 Crypto Probo Prediction Cheat Sheet Reference</h2>
-        <p class="text-gray-400 mb-4">This section provides the original guidelines for reference.</p>
+        <h2 class="text-2xl font-semibold mb-4 text-gold-100">
+            <i class="fas fa-book-open text-gold-500 mr-2"></i> Crypto Probo Prediction Cheat Sheet Reference
+        </h2>
+        <p class="text-gold-400 mb-4">This section provides the original guidelines for reference, updated with new indicators.</p>
 
-        <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ TRUST the Prediction When:</h3>
-        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+        <h3 class="text-xl font-semibold text-gold-100 mb-2">✅ TRUST the Prediction When:</h3>
+        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li><strong>Condition</strong>: Time to expiry is &lt; 2 hours
                 <ul><li><strong>Why</strong>: Short-term moves are easier to project with recent trend/sentiment</li></ul>
             </li>
@@ -308,10 +399,28 @@
             <li><strong>Condition</strong>: Candle bodies are stable (not huge wicks)
                 <ul><li><strong>Why</strong>: Less noise = better delta prediction accuracy</li></ul>
             </li>
+            <li><strong>Condition</strong>: MACD shows bullish crossover
+                <ul><li><strong>Why</strong>: Indicates strengthening upward momentum</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Stochastic is oversold (potential rebound)
+                <ul><li><strong>Why</strong>: Price may be due for an upward correction</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Price near lower Bollinger Band (potential support)
+                <ul><li><strong>Why</strong>: Suggests price is at a strong support level</li></ul>
+            </li>
+            <li><strong>Condition</strong>: No massive move recently
+                <ul><li><strong>Why</strong>: Predictable price action</li></ul>
+            </li>
+            <li><strong>Condition</strong>: Bollinger Bands are stable (not squeezing/expanding)
+                <ul><li><strong>Why</strong>: Less volatility uncertainty</li></ul>
+            </li>
+            <li><strong>Condition</strong>: No recent volume spike
+                <ul><li><strong>Why</strong>: Market not reacting to sudden news/events</li></ul>
+            </li>
         </ul>
 
-        <h3 class="text-xl font-semibold text-gray-200 mb-2">⚠️ BE CAUTIOUS / DOUBLE-CHECK When:</h3>
-        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+        <h3 class="text-xl font-semibold text-gold-100 mb-2">⚠️ BE CAUTIOUS / DOUBLE-CHECK When:</h3>
+        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li><strong>Red Flag</strong>: Target time is &gt; 3 hours away
                 <ul><li><strong>Why</strong>: Market conditions may shift unpredictably</li></ul>
             </li>
@@ -330,28 +439,54 @@
             <li><strong>Red Flag</strong>: Candle volatility is high (huge wicks)
                 <ul><li><strong>Why</strong>: Delta estimates become noisy and inaccurate</li></ul>
             </li>
+            <li><strong>Red Flag</strong>: MACD shows bearish crossover
+                <ul><li><strong>Why</strong>: Indicates strengthening downward momentum</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Stochastic is overbought (potential reversal)
+                <ul><li><strong>Why</b>: Price may be due for a downward correction</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Price near upper Bollinger Band or BB contracting
+                <ul><li><strong>Why</strong>: Suggests strong resistance or potential for volatile breakout</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Bollinger Bands are volatile (squeezing/expanding)
+                <ul><li><strong>Why</strong>: High uncertainty, potential for sharp moves</li></ul>
+            </li>
+            <li><strong>Red Flag</strong>: Recent volume spike
+                <ul><li><strong>Why</strong>: Market reacting to sudden news/events, unpredictable</li></ul>
+            </li>
         </ul>
 
-        <h3 class="text-xl font-semibold text-gray-200 mb-2">🔐 Pro Tip (Original Reference):</h3>
-        <p class="text-gray-300 mb-2">If at least 3/6 “Trust” signals align → GO with the vote.</p>
-        <p class="text-gray-300 mb-4">If 2+ “Caution” flags are present → SKIP the trade or wait.</p>
+        <h3 class="text-xl font-semibold text-gold-100 mb-2">🔐 Pro Tip (Original Reference):</h3>
+        <p class="text-gold-300 mb-2">If at least 7/12 “Trust” signals align → GO with the vote.</p>
+        <p class="text-gold-300 mb-4">If 4+ “Caution” flags are present → SKIP the trade or wait.</p>
 
-        <h3 class="text-xl font-semibold text-gray-200 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
-        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+        <h3 class="text-xl font-semibold text-gold-100 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
+        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li>Time: 1 hour left</li>
             <li>BTC uptrending</li>
             <li>EMA20 &gt; EMA50</li>
             <li>RSI = 58</li>
             <li>Sentiment = +0.3</li>
+            <li>MACD bullish crossover</li>
+            <li>Stochastic not extreme</li>
+            <li>Price not near BB extremes</li>
+            <li>No massive move recently</li>
+            <li>BB stable</li>
+            <li>No recent volume spike</li>
             <li>→ ✅ Trust YES vote</li>
         </ul>
 
-        <h3 class="text-xl font-semibold text-gray-200 mb-2">⚠️ Example: When to AVOID (Original Reference)</h3>
-        <ul class="list-disc list-inside text-gray-300 space-y-1 mb-4">
+        <h3 class="text-xl font-semibold text-gold-100 mb-2">⚠️ Example: When to AVOID (Original Reference)</h3>
+        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li>Time: 4 hours left</li>
             <li>BTC dumped $800 in 15 mins</li>
             <li>RSI = 22</li>
             <li>Sentiment = 0.05</li>
+            <li>MACD bearish crossover</li>
+            <li>Stochastic overbought</li>
+            <li>Price near upper BB</li>
+            <li>BB squeezing</li>
+            <li>Recent volume spike</li>
             <li>→ ⚠️ Avoid vote — unpredictable zone</li>
         </ul>
 
@@ -410,12 +545,29 @@
             document.getElementById('metric-rsi').textContent = market_conditions.rsi ? market_conditions.rsi.toFixed(2) : 'N/A';
             document.getElementById('metric-ema20').textContent = market_conditions.ema_20 ? market_conditions.ema_20.toFixed(2) : 'N/A';
             document.getElementById('metric-ema50').textContent = market_conditions.ema_50 ? market_conditions.ema_50.toFixed(2) : 'N/A';
+            document.getElementById('metric-macd').textContent = market_conditions.macd ? market_conditions.macd.toFixed(2) : 'N/A';
+            document.getElementById('metric-stochk').textContent = market_conditions.stoch_k ? market_conditions.stoch_k.toFixed(2) : 'N/A';
+            document.getElementById('metric-stochd').textContent = market_conditions.stoch_d ? market_conditions.stoch_d.toFixed(2) : 'N/A';
+            
+            const bbUpper = market_conditions.bb_upper ? market_conditions.bb_upper.toFixed(2) : 'N/A';
+            const bbMid = market_conditions.bb_mid ? market_conditions.bb_mid.toFixed(2) : 'N/A';
+            const bbLower = market_conditions.bb_lower ? market_conditions.bb_lower.toFixed(2) : 'N/A';
+            document.getElementById('metric-bb').textContent = `${bbUpper} / ${bbMid} / ${bbLower}`;
+            document.getElementById('metric-bb-width').textContent = market_conditions.bb_width ? market_conditions.bb_width.toFixed(2) : 'N/A';
+
+
             document.getElementById('market-trend').textContent = market_conditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
             let rsiZone = '';
             if (market_conditions.overbought) rsiZone = '🔥 Overbought';
             else if (market_conditions.oversold) rsiZone = '🧊 Oversold';
             else rsiZone = '✅ Neutral';
             document.getElementById('market-rsi-zone').textContent = rsiZone;
+
+            let stochZone = '';
+            if (market_conditions.stoch_overbought) stochZone = '🔥 Overbought';
+            else if (market_conditions.stoch_oversold) stochZone = '🧊 Oversold';
+            else stochZone = '✅ Neutral';
+            document.getElementById('market-stoch-zone').textContent = stochZone;
 
             // Update Chart
             drawChart(chart_data);
@@ -437,21 +589,32 @@
                 
                 // Update Trust Signals
                 document.getElementById('trust-time').innerHTML = confidence.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-trend-text').textContent = selectedCurrency; // Update text for trend
+                document.getElementById('trust-trend-text').textContent = selectedCurrency;
                 document.getElementById('trust-trend').innerHTML = confidence.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
                 document.getElementById('trust-sentiment').innerHTML = confidence.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
                 document.getElementById('trust-rsi').innerHTML = confidence.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
-                document.getElementById('trust-news').innerHTML = confidence.trust_conditions.no_major_news_expected ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting)';
-                document.getElementById('trust-stable-candles').innerHTML = confidence.trust_conditions.candle_bodies_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-news').innerHTML = confidence.trust_conditions.no_major_news_expected_no_volume_spike ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting / No volume spike)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting / Volume spike)';
+                document.getElementById('trust-stable-candles').innerHTML = confidence.trust_conditions.candle_bodies_stable_not_volatile ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-macd-bullish').innerHTML = confidence.trust_conditions.macd_bullish_crossover_confirmed ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-stoch-oversold').innerHTML = confidence.trust_conditions.stoch_oversold_bullish_cross ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-bb-lower').innerHTML = confidence.trust_conditions.price_near_bb_lower_stable_bands ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-no-massive-move').innerHTML = confidence.trust_conditions.no_massive_move_recent ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-bb-stable').innerHTML = confidence.trust_conditions.bb_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-no-volume-spike').innerHTML = confidence.trust_conditions.no_volume_spike_recent ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
 
                 // Update Caution Flags
                 document.getElementById('caution-time').innerHTML = confidence.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-massive-move-text').textContent = selectedCurrency; // Update text for massive move
+                document.getElementById('caution-massive-move-text').textContent = selectedCurrency;
                 document.getElementById('caution-massive-move').innerHTML = confidence.caution_conditions.btc_massive_move ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
                 document.getElementById('caution-rsi').innerHTML = confidence.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
                 document.getElementById('caution-sentiment').innerHTML = confidence.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
-                document.getElementById('caution-big-news').innerHTML = confidence.caution_conditions.big_news_coming ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting)';
+                document.getElementById('caution-big-news').innerHTML = confidence.caution_conditions.big_news_coming_or_volume_spike ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting / Volume spike)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting / No volume spike)';
                 document.getElementById('caution-volatile-candles').innerHTML = confidence.caution_conditions.candle_volatility_high ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-macd-bearish').innerHTML = confidence.caution_conditions.macd_bearish_crossover_confirmed ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-stoch-overbought').innerHTML = confidence.caution_conditions.stoch_overbought_bearish_cross ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-bb-upper-contracting').innerHTML = confidence.caution_conditions.price_near_bb_upper_or_bb_volatile ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-bb-volatile').innerHTML = confidence.caution_conditions.bb_volatile ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-volume-spike').innerHTML = confidence.caution_conditions.volume_spike_recent ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
 
 
                 document.getElementById('total-trust-signals').textContent = confidence.trust_signals_count;
@@ -461,9 +624,9 @@
                 let proTipClass = '';
                 let adviceMessage = confidence.advice_message;
 
-                if (confidence.trust_signals_count >= 3 && confidence.caution_flags_count < 2) {
+                if (confidence.trust_signals_count >= 7 && confidence.caution_flags_count < 4) {
                     proTipClass = 'success-message';
-                } else if (confidence.caution_flags_count >= 2) {
+                } else if (confidence.caution_flags_count >= 4) {
                     proTipClass = 'warning-message';
                 } else {
                     proTipClass = 'info-message';
@@ -490,10 +653,23 @@
             const highPrices = chartData.map(d => d.high);
             const lowPrices = chartData.map(d => d.low);
             const closePrices = chartData.map(d => d.close);
+            const volume = chartData.map(d => d.volume);
             const ema20 = chartData.map(d => d.EMA_20);
             const ema50 = chartData.map(d => d.EMA_50);
+            const bbUpper = chartData.map(d => d.BB_Upper);
+            const bbLower = chartData.map(d => d.BB_Lower);
+            const bbMid = chartData.map(d => d.BB_Mid);
+            const macd = chartData.map(d => d.MACD);
+            const macdSignal = chartData.map(d => d.MACD_Signal);
+            const macdHist = chartData.map(d => d.MACD_Hist);
+            const stochK = chartData.map(d => d.STOCH_K);
+            const stochD = chartData.map(d => d.STOCH_D);
 
-            const traceCandles = {
+            // Define traces
+            const traces = [];
+
+            // Candlestick trace (main price chart)
+            traces.push({
                 x: timestamps,
                 open: openPrices,
                 high: highPrices,
@@ -501,62 +677,255 @@
                 close: closePrices,
                 type: 'candlestick',
                 name: 'Candles',
-                increasing: { line: { color: '#48bb78' } },
-                decreasing: { line: { color: '#ef4444' } }
-            };
+                increasing: { line: { color: '#FFD700' } }, /* Gold for increasing */
+                decreasing: { line: { color: '#B22222' } }, /* Firebrick for decreasing */
+                xaxis: 'x',
+                yaxis: 'y'
+            });
 
-            const traceEMA20 = {
+            // EMA 20
+            traces.push({
                 x: timestamps,
                 y: ema20,
                 type: 'scatter',
                 mode: 'lines',
                 name: 'EMA 20',
-                line: { color: '#63b3ed', width: 1.5 }
-            };
+                line: { color: '#87CEEB', width: 1.5 }, /* SkyBlue */
+                showlegend: true,
+                xaxis: 'x',
+                yaxis: 'y'
+            });
 
-            const traceEMA50 = {
+            // EMA 50
+            traces.push({
                 x: timestamps,
                 y: ema50,
                 type: 'scatter',
                 mode: 'lines',
                 name: 'EMA 50',
-                line: { color: '#a78bfa', width: 1.5 }
-            };
+                line: { color: '#DAA520', width: 1.5 }, /* Goldenrod */
+                showlegend: true,
+                xaxis: 'x',
+                yaxis: 'y'
+            });
 
+            // BB Mid
+            traces.push({
+                x: timestamps,
+                y: bbMid,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'BB Mid',
+                line: { color: '#A9A9A9', width: 1, dash: 'dash' }, /* DarkGrey */
+                showlegend: true,
+                xaxis: 'x',
+                yaxis: 'y'
+            });
+            // BB Upper
+            traces.push({
+                x: timestamps,
+                y: bbUpper,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'BB Upper',
+                line: { color: '#6A5ACD', width: 1 }, /* SlateBlue */
+                showlegend: true,
+                xaxis: 'x',
+                yaxis: 'y'
+            });
+            // BB Lower
+            traces.push({
+                x: timestamps,
+                y: bbLower,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'BB Lower',
+                line: { color: '#6A5ACD', width: 1 }, /* SlateBlue */
+                showlegend: true,
+                xaxis: 'x',
+                yaxis: 'y'
+            });
+
+            // Volume
+            traces.push({
+                x: timestamps,
+                y: volume,
+                type: 'bar',
+                name: 'Volume',
+                marker: { color: '#444444' }, /* Darker grey for volume bars */
+                showlegend: false,
+                xaxis: 'x2',
+                yaxis: 'y2'
+            });
+
+            // MACD Line
+            traces.push({
+                x: timestamps,
+                y: macd,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'MACD',
+                line: { color: '#FFD700', width: 1.5 }, /* Gold */
+                showlegend: true,
+                xaxis: 'x3',
+                yaxis: 'y3'
+            });
+
+            // MACD Signal Line
+            traces.push({
+                x: timestamps,
+                y: macdSignal,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Signal',
+                line: { color: '#87CEEB', width: 1.5, dash: 'dot' }, /* SkyBlue */
+                showlegend: true,
+                xaxis: 'x3',
+                yaxis: 'y3'
+            });
+
+            // MACD Histogram
+            traces.push({
+                x: timestamps,
+                y: macdHist,
+                type: 'bar',
+                name: 'Histogram',
+                marker: {
+                    color: macdHist.map(val => val >= 0 ? '#9ae6b4' : '#feb2b2') /* Green for positive, Red for negative */
+                },
+                showlegend: false,
+                xaxis: 'x3',
+                yaxis: 'y3'
+            });
+
+            // Stochastic %K
+            traces.push({
+                x: timestamps,
+                y: stochK,
+                type: 'scatter',
+                mode: 'lines',
+                name: '%K',
+                line: { color: '#FFD700', width: 1.5 }, /* Gold */
+                showlegend: true,
+                xaxis: 'x4',
+                yaxis: 'y4'
+            });
+
+            // Stochastic %D
+            traces.push({
+                x: timestamps,
+                y: stochD,
+                type: 'scatter',
+                mode: 'lines',
+                name: '%D',
+                line: { color: '#87CEEB', width: 1.5, dash: 'dot' }, /* SkyBlue */
+                showlegend: true,
+                xaxis: 'x4',
+                yaxis: 'y4'
+            });
+
+            // Define layout with multiple axes
             const layout = {
+                grid: {
+                    rows: 4,
+                    columns: 1,
+                    pattern: 'independent',
+                    rowheights: [0.5, 0.2, 0.15, 0.15],
+                    subplots: [['xy'], ['xy2'], ['xy3'], ['xy4']] // Map traces to subplots
+                },
                 xaxis: {
                     rangeslider: { visible: false },
                     type: 'date',
                     title: 'Time',
-                    tickfont: { color: '#cbd5e1' },
-                    gridcolor: '#4a5568',
-                    linecolor: '#4a5568'
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
+                },
+                xaxis2: {
+                    rangeslider: { visible: false },
+                    type: 'date',
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
+                },
+                xaxis3: {
+                    rangeslider: { visible: false },
+                    type: 'date',
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
+                },
+                xaxis4: {
+                    rangeslider: { visible: false },
+                    type: 'date',
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
                 },
                 yaxis: {
                     title: 'Price (USDT)',
-                    tickfont: { color: '#cbd5e1' },
-                    gridcolor: '#4a5568',
-                    linecolor: '#4a5568'
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
                 },
-                plot_bgcolor: '#2d3748',
-                paper_bgcolor: '#2d3748',
-                font: { color: '#e2e8f0' },
+                yaxis2: {
+                    title: 'Volume',
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
+                },
+                yaxis3: {
+                    title: 'MACD',
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444'
+                },
+                yaxis4: {
+                    title: 'Stochastic',
+                    tickfont: { color: '#DAA520' },
+                    gridcolor: '#333333',
+                    linecolor: '#444444',
+                    range: [0, 100] /* Stochastic is always 0-100 */
+                },
+                plot_bgcolor: '#222222',
+                paper_bgcolor: '#222222',
+                font: { color: '#FFD700' },
                 margin: { l: 40, r: 40, t: 30, b: 30 },
                 showlegend: true,
                 legend: {
                     x: 0, y: 1.15,
                     bgcolor: 'rgba(0,0,0,0)',
                     bordercolor: 'rgba(0,0,0,0)',
-                    font: { color: '#e2e8f0' }
+                    font: { color: '#FFD700' }
                 }
             };
 
-            Plotly.newPlot('candlestick-chart', [traceCandles, traceEMA20, traceEMA50], layout, { responsive: true, displayModeBar: true });
+            Plotly.newPlot('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true });
         }
 
         // --- Main Application Logic ---
 
+        function showLoading(elementId) {
+            document.getElementById(elementId).classList.remove('hidden');
+        }
+
+        function hideLoading(elementId) {
+            document.getElementById(elementId).classList.add('hidden');
+        }
+
+        function updateCurrentISTTime() {
+            const now = new Date();
+            const options = {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZone: 'Asia/Kolkata'
+            };
+            document.getElementById('current-ist-time').textContent = now.toLocaleTimeString('en-IN', options);
+        }
+
         async function initializeApp() {
+            showLoading('loading-spinner');
             document.getElementById('current-price-display').textContent = "Loading...";
             const messageDiv = document.getElementById('recommended-vote-message');
             messageDiv.innerHTML = '';
@@ -580,6 +949,8 @@
                 messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
                 messageDiv.classList.remove('hidden');
                 document.getElementById('current-price-display').textContent = "$ERROR";
+            } finally {
+                hideLoading('loading-spinner');
             }
         }
 
@@ -587,6 +958,7 @@
         document.getElementById('prediction-form').addEventListener('submit', async (event) => {
             event.preventDefault();
 
+            showLoading('prediction-spinner');
             const targetPrice = parseFloat(document.getElementById('target-price').value);
             const targetTimeStr = document.getElementById('target-time').value;
             const selectedCurrencyForPrediction = document.querySelector('input[name="currency"]:checked').value;
@@ -599,6 +971,7 @@
             if (isNaN(targetPrice) || !targetTimeStr) {
                 messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
                 messageDiv.classList.remove('hidden');
+                hideLoading('prediction-spinner');
                 return;
             }
 
@@ -637,6 +1010,8 @@
                 console.error("Error during prediction:", error);
                 messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
                 messageDiv.classList.remove('hidden');
+            } finally {
+                hideLoading('prediction-spinner');
             }
         });
 
@@ -650,7 +1025,11 @@
         });
 
         // Initialize the app when the DOM is fully loaded
-        document.addEventListener('DOMContentLoaded', initializeApp);
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeApp();
+            updateCurrentISTTime(); // Set initial time
+            setInterval(updateCurrentISTTime, 1000); // Update time every second
+        });
 
         // Periodically update market data (e.g., every 1 minute for a more "real-time" feel)
         setInterval(initializeApp, 60000); // 60000 ms = 1 minute
