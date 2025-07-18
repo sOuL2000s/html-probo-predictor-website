@@ -1560,7 +1560,7 @@ if __name__ == "__main__":
         });
 
         // --- Backend API URL ---
-        const BACKEND_API_URL = 'http://localhost:5000/'; // IMPORTANT: Change this for deployment!
+        const BACKEND_API_URL = 'https://html-probo-predictor-website.onrender.com'; // IMPORTANT: Change this for deployment!
 
         // Global data storage for both BTC and ETH
         let allMarketData = {
@@ -2399,7 +2399,7 @@ gunicorn
 pytz
 numpy
 scikit-learn # NEWLY ADDED
-
+prophet
 
 --- END FILE: requirements.txt ---
 
@@ -2530,7 +2530,3 @@ if __name__ == "__main__":
 
 
 --- END FILE: telegram_bot.py ---
-
---------------------------------------------------------------------------------------------------------------------------------
-
-let the user choose from candlestick and current type of graph and also let users choose from other graph types as well but make candlestick default. send me the updated code 
