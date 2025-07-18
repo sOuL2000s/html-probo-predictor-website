@@ -13,3 +13,4 @@ gunicorn
 pytz
 numpy
 scikit-learn # NEWLY ADDED
+prophet
