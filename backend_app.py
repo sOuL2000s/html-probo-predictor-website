@@ -2,7 +2,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
-from datetime import datetime, timedelta # Correct import: datetime now refers to the datetime class
+from datetime import datetime, timedelta
 import pandas as pd
 import pytz
 import numpy as np
@@ -12,6 +12,7 @@ from textblob import TextBlob
 import urllib.parse
 from ta.momentum import RSIIndicator
 from ta.trend import EMAIndicator
+from prophet import Prophet # NEW IMPORT: For advanced time series forecasting
 
 app = Flask(__name__)
 CORS(app)
@@ -249,30 +250,65 @@ def interpret_market_conditions(df: pd.DataFrame):
 
 def predict_future_price(df: pd.DataFrame, current_price: float, hours_ahead: float = 1):
     """
-    Predicts the future price based on historical price changes.
+    Predicts the future price using Facebook Prophet, which can model trends and seasonality.
     """
-    if df.empty or 'close' not in df.columns or len(df) < 2:
-        print("Warning: Not enough data in DataFrame for accurate price prediction. Returning current price as projected.")
+    # Prophet requires at least 2 data points for fitting.
+    # For meaningful trend and seasonality detection, more data (e.g., 20+ points) is recommended.
+    if df.empty or 'close' not in df.columns or len(df) < 20: # Increased minimum data points for Prophet
+        print("Warning: Not enough data in DataFrame for accurate Prophet prediction. Returning current price as projected.")
         return current_price, 0.0, current_price
 
-    df_numeric_close = pd.to_numeric(df['close'], errors='coerce').dropna()
-    if df_numeric_close.empty or len(df_numeric_close) < 2:
-        print("Warning: 'close' column has insufficient numeric data for prediction. Returning current price as projected.")
+    # Prepare data for Prophet: needs 'ds' (datetime) and 'y' (value) columns
+    prophet_df = df.reset_index()[['timestamp', 'close']].rename(columns={'timestamp': 'ds', 'close': 'y'})
+    prophet_df['y'] = pd.to_numeric(prophet_df['y'], errors='coerce')
+    prophet_df.dropna(subset=['y'], inplace=True)
+
+    if prophet_df.empty or len(prophet_df) < 20:
+        print("Warning: 'close' column has insufficient numeric data for Prophet prediction after cleaning. Returning current price as projected.")
         return current_price, 0.0, current_price
 
-    price_changes = df_numeric_close.diff().dropna()
-    avg_delta = price_changes.mean() if not price_changes.empty else 0.0
+    # Initialize and fit Prophet model
+    # Daily seasonality is crucial for hourly data
+    model = Prophet(daily_seasonality=True, weekly_seasonality=False, yearly_seasonality=False)
+    # You can add more parameters like changepoint_prior_scale for trend flexibility
+    # model = Prophet(daily_seasonality=True, changepoint_prior_scale=0.05) # Example: more flexible trend
 
-    projected_price = current_price + (avg_delta * hours_ahead)
+    try:
+        model.fit(prophet_df)
+    except Exception as e:
+        print(f"Error fitting Prophet model: {e}. Returning current price as projected.")
+        return current_price, 0.0, current_price
+
+    # Create a future DataFrame for prediction
+    # periods = hours_ahead * (60 / interval_minutes) if interval is not 1h
+    # Since interval is 1h, periods = hours_ahead
+    future = model.make_future_dataframe(periods=int(hours_ahead), freq='H') # 'H' for hourly frequency
+
+    # Make predictions
+    forecast = model.predict(future)
+
+    # Get the predicted price for the target time.
+    # This will be the last 'yhat' in the forecast, corresponding to the 'hours_ahead' point.
+    projected_price = forecast['yhat'].iloc[-1]
+
+    # Calculate average delta per hour based on the predicted change over the forecast period
+    # Compare the last known price with the projected price
+    last_known_price = prophet_df['y'].iloc[-1]
+    total_predicted_change = projected_price - last_known_price
+    avg_delta = total_predicted_change / hours_ahead if hours_ahead > 0 else 0.0
+
+    # Ensure projected price doesn't go negative (for cryptocurrency prices)
+    projected_price = max(0.0, projected_price)
 
     return round(projected_price, 2), round(avg_delta, 2), current_price
+
 
 def recommend_probo_vote_for_target(df: pd.DataFrame, current_price: float, sentiment_score: float, target_price: float, target_time_str: str):
     """
     Recommends a 'YES' or 'NO' vote for a Probo outcome based on projected price and sentiment.
     """
-    now_utc = datetime.utcnow() # Corrected: Use datetime.utcnow()
-    target_time_only = datetime.strptime(target_time_str, "%H:%M").time() # Corrected: Use datetime.strptime()
+    now_utc = datetime.utcnow()
+    target_time_only = datetime.strptime(target_time_str, "%H:%M").time()
     target_datetime_utc = now_utc.replace(hour=target_time_only.hour, minute=target_time_only.minute, second=0, microsecond=0)
     
     if target_datetime_utc < now_utc:
@@ -501,15 +537,15 @@ def predict_outcome():
 
     try:
         ist_timezone = pytz.timezone('Asia/Kolkata')
-        now_ist = datetime.now(ist_timezone) # Corrected: Use datetime.now()
-        target_time_only = datetime.strptime(target_time_str, "%H:%M").time() # Corrected: Use datetime.strptime()
+        now_ist = datetime.now(ist_timezone)
+        target_time_only = datetime.strptime(target_time_str, "%H:%M").time()
         target_datetime_ist = now_ist.replace(hour=target_time_only.hour, minute=target_time_only.minute, second=0, microsecond=0)
 
         if target_datetime_ist < now_ist:
             target_datetime_ist += timedelta(days=1)
 
         target_datetime_utc = target_datetime_ist.astimezone(pytz.utc)
-        hours_remaining = (target_datetime_utc - datetime.utcnow().replace(tzinfo=pytz.utc)).total_seconds() / 3600 # Corrected: Use datetime.utcnow()
+        hours_remaining = (target_datetime_utc - datetime.utcnow().replace(tzinfo=pytz.utc)).total_seconds() / 3600
         hours_remaining = max(0.25, round(hours_remaining, 2))
 
         result = recommend_probo_vote_for_target(

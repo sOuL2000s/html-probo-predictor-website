@@ -11,4 +11,5 @@ flask
 flask-cors
 gunicorn
 pytz
-numpy # Added for handling NumPy types in JSON serialization
+numpy
+scikit-learn # NEWLY ADDED
