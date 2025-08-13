@@ -33,12 +33,11 @@ eth_market_conditions = {}
 
 # --- Configuration ---
 BINANCE_BASE_URL = "https://api.binance.com"
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_FALLBACK_TELEGRAM_BOT_TOKEN")
-TELEGRAM_USER_ID = os.environ.get("TELEGRAM_USER_ID", 5368095453)
+# Telegram Bot Token and User ID are removed as per request.
 
 # --- Crypto Data Functions ---
 
-def fetch_ohlcv(symbol="BTCUSDT", interval="1h", limit=150): # Increased limit for better indicator calculation
+def fetch_ohlcv(symbol="BTCUSDT", interval="1h", limit=200): # Increased limit for better indicator calculation
     """
     Fetches OHLCV (Open, High, Low, Close, Volume) data from Binance for a given symbol.
     """
@@ -116,7 +115,7 @@ def add_technical_indicators(df):
         df["EMA_50"] = float('nan')
 
     # Calculate MACD
-    if len(df) >= 26: # MACD needs at least 26 periods for EMA calculation
+    if len(df) >= 34: # MACD needs 12 (fast EMA) + 26 (slow EMA) periods to stabilize, 34 is safer.
         macd_indicator = MACD(df["close"])
         df["MACD"] = macd_indicator.macd()
         df["MACD_Signal"] = macd_indicator.macd_signal()
@@ -182,7 +181,7 @@ def get_current_price(symbol="BTCUSDT"):
         print(f"An unexpected error occurred in get_current_price for {symbol}: {e}")
         return 0.0
 
-# --- Sentiment Functions ---
+# --- Sentiment Functions (consolidated) ---
 
 def fetch_news_sentiment(query="bitcoin", max_items=20):
     """
@@ -212,7 +211,7 @@ def get_crypto_sentiment(crypto_name="bitcoin"):
     """
     return fetch_news_sentiment(f"{crypto_name} OR {crypto_name[:3].upper()}")
 
-# --- Probo Strategy Functions ---
+# --- Market Interpretation (consolidated and enhanced) ---
 
 def interpret_market_conditions(df: pd.DataFrame):
     """
@@ -226,19 +225,17 @@ def interpret_market_conditions(df: pd.DataFrame):
     ]
     if df.empty or not all(col in df.columns for col in required_cols):
         print("Warning: DataFrame is empty or missing required columns for market interpretation. Returning default conditions.")
-        return {
-            "bullish_trend": False, "oversold": False, "overbought": False,
-            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-            "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-            "stoch_k": 50.0, "stoch_d": 50.0,
-            "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-            "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-            "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-            "stoch_oversold": False, "stoch_overbought": False,
-            "price_near_bb_lower": False, "price_near_bb_upper": False,
-            "bb_contracting": False, "bb_expanding": False, # New BB states
-            "volume_spike_recent": False # New volume analysis
-        }
+        # Initialize with None to correctly reflect missing data, rather than default values
+        return {k: None for k in [
+            "bullish_trend", "oversold", "overbought", "rsi", "ema_20", "ema_50",
+            "macd", "macd_signal", "macd_hist", "stoch_k", "stoch_d",
+            "bb_upper", "bb_lower", "bb_mid", "bb_width", "bb_percent",
+            "massive_move_recent", "candle_volatility_high", "candle_bodies_stable",
+            "macd_bullish_crossover", "macd_bearish_crossover",
+            "stoch_oversold", "stoch_overbought",
+            "price_near_bb_lower", "price_near_bb_upper",
+            "bb_contracting", "bb_expanding", "volume_spike_recent"
+        ]}
 
     latest = df.iloc[-1]
 
@@ -266,8 +263,8 @@ def interpret_market_conditions(df: pd.DataFrame):
     rsi_oversold = bool(rsi is not None and rsi < 30)
     rsi_overbought = bool(rsi is not None and rsi > 70)
     
-    macd_bullish_crossover = bool(macd is not None and macd_signal is not None and macd > macd_signal and macd_hist > 0)
-    macd_bearish_crossover = bool(macd is not None and macd_signal is not None and macd < macd_signal and macd_hist < 0)
+    macd_bullish_crossover = bool(macd is not None and macd_signal is not None and macd > macd_signal and macd_hist is not None and macd_hist > 0)
+    macd_bearish_crossover = bool(macd is not None and macd_signal is not None and macd < macd_signal and macd_hist is not None and macd_hist < 0)
 
     stoch_oversold = bool(stoch_k is not None and stoch_d is not None and stoch_k < 20 and stoch_d < 20)
     stoch_overbought = bool(stoch_k is not None and stoch_d is not None and stoch_k > 80 and stoch_d > 80)
@@ -278,7 +275,7 @@ def interpret_market_conditions(df: pd.DataFrame):
         past_close = df['close'].iloc[-4] if len(df) >= 4 else df['close'].iloc[0]
         if pd.notna(past_close) and past_close != 0:
             percent_change = abs((latest_close - past_close) / past_close) * 100
-            if percent_change > 2.0:
+            if percent_change > 2.0: # Define "massive" as > 2% move in 4 hours
                 massive_move_recent = True
 
     candle_volatility_high = False
@@ -288,7 +285,7 @@ def interpret_market_conditions(df: pd.DataFrame):
             candle_volatility_high = True
         if latest_wick_to_body_ratio < 0.5 and (latest_body_size / latest_close) * 100 > 0.1:
             candle_bodies_stable = True
-    if candle_volatility_high:
+    if candle_volatility_high: # If high volatility, bodies are NOT stable.
         candle_bodies_stable = False
 
     # Bollinger Band interpretations
@@ -298,8 +295,6 @@ def interpret_market_conditions(df: pd.DataFrame):
     bb_contracting = False
     bb_expanding = False
     if len(df) >= 20 and bb_width is not None:
-        # Check if current BB width is significantly smaller/larger than average of last few widths
-        # Use a rolling average of BB_Width to detect contraction/expansion
         rolling_bb_width_avg = df['BB_Width'].iloc[-20:].mean() # Average of last 20 widths
         if rolling_bb_width_avg is not None and rolling_bb_width_avg > 0:
             if bb_width < rolling_bb_width_avg * 0.9: # 10% narrower than recent average
@@ -314,7 +309,6 @@ def interpret_market_conditions(df: pd.DataFrame):
         if avg_volume_past is not None and avg_volume_past > 0:
             if latest_volume > avg_volume_past * 1.5: # Current volume is 50% higher than recent average
                 volume_spike_recent = True
-
 
     return {
         "bullish_trend": bullish_trend,
@@ -347,7 +341,7 @@ def interpret_market_conditions(df: pd.DataFrame):
         "volume_spike_recent": volume_spike_recent
     }
 
-# --- Predictor Functions ---
+# --- Predictor Functions (consolidated and enhanced) ---
 
 def predict_future_price(df: pd.DataFrame, current_price: float, hours_ahead: float = 1):
     """
@@ -368,9 +362,9 @@ def predict_future_price(df: pd.DataFrame, current_price: float, hours_ahead: fl
     # Initialize and fit Prophet model with adjusted parameters
     model = Prophet(
         daily_seasonality=True,
-        weekly_seasonality=False,
+        weekly_seasonality=False, # Crypto often doesn't have strong weekly seasonality on 1hr
         yearly_seasonality=False,
-        changepoint_prior_scale=0.08 # Increased flexibility for trend changes
+        changepoint_prior_scale=0.1 # Increased flexibility for trend changes
     )
     try:
         model.fit(prophet_df)
@@ -408,7 +402,7 @@ def recommend_probo_vote_for_target(df: pd.DataFrame, current_price: float, sent
     sentiment = sentiment_score
     projected, delta, current = predict_future_price(df, current_price, hours_remaining)
 
-    if projected >= target_price and sentiment >= -0.1:
+    if projected >= target_price and sentiment >= -0.1: # Sentiment not strongly negative
         vote = "YES"
     else:
         vote = "NO"
@@ -425,44 +419,25 @@ def recommend_probo_vote_for_target(df: pd.DataFrame, current_price: float, sent
     }
     return result
 
-# --- Telegram Bot Functions ---
-
-def send_telegram_alert(message):
-    """
-    Sends a Markdown-formatted message as an alert to a specified Telegram user.
-    """
-    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_FALLBACK_TELEGRAM_BOT_TOKEN":
-        print("❌ Telegram BOT_TOKEN not configured. Alert not sent. Please set the TELEGRAM_BOT_TOKEN environment variable.")
-        return
-    
-    if not TELEGRAM_USER_ID:
-        print("❌ Telegram USER_ID not configured. Alert not sent. Please set the TELEGRAM_USER_ID environment variable.")
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_USER_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-        if response.status_code == 200:
-            print("✅ Telegram alert sent successfully.")
-        else:
-            print(f"❌ Failed to send alert (status code: {response.status_code}): {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Telegram alert error (network/request issue): {str(e)}")
-    except Exception as e:
-        print(f"❌ An unexpected error occurred while sending Telegram alert: {str(e)}")
-
 # --- Flask App Endpoints ---
 
 def load_initial_data():
     """Fetches and processes initial market data and sentiment for both BTC and ETH."""
     global btc_market_data_df, btc_current_price, btc_sentiment_score, btc_market_conditions
     global eth_market_data_df, eth_current_price, eth_sentiment_score, eth_market_conditions
+
+    # Helper function to create default market conditions
+    def get_default_market_conditions():
+        return {k: None for k in [
+            "bullish_trend", "oversold", "overbought", "rsi", "ema_20", "ema_50",
+            "macd", "macd_signal", "macd_hist", "stoch_k", "stoch_d",
+            "bb_upper", "bb_lower", "bb_mid", "bb_width", "bb_percent",
+            "massive_move_recent", "candle_volatility_high", "candle_bodies_stable",
+            "macd_bullish_crossover", "macd_bearish_crossover",
+            "stoch_oversold", "stoch_overbought",
+            "price_near_bb_lower", "price_near_bb_upper",
+            "bb_contracting", "bb_expanding", "volume_spike_recent"
+        ]}
 
     # --- Load BTC Data ---
     try:
@@ -473,19 +448,7 @@ def load_initial_data():
             btc_market_data_df = pd.DataFrame()
             btc_current_price = 0.0
             btc_sentiment_score = 0.0
-            btc_market_conditions = {
-                "bullish_trend": False, "oversold": False, "overbought": False,
-                "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-                "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-                "stoch_k": 50.0, "stoch_d": 50.0,
-                "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-                "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-                "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-                "stoch_oversold": False, "stoch_overbought": False,
-                "price_near_bb_lower": False, "price_near_bb_upper": False,
-                "bb_contracting": False, "bb_expanding": False,
-                "volume_spike_recent": False
-            }
+            btc_market_conditions = get_default_market_conditions()
         else:
             print("Adding technical indicators for BTC...")
             df_btc = add_technical_indicators(df_btc)
@@ -505,19 +468,7 @@ def load_initial_data():
         btc_market_data_df = pd.DataFrame()
         btc_current_price = 0.0
         btc_sentiment_score = 0.0
-        btc_market_conditions = {
-            "bullish_trend": False, "oversold": False, "overbought": False,
-            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-            "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-            "stoch_k": 50.0, "stoch_d": 50.0,
-            "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-            "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-            "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-            "stoch_oversold": False, "stoch_overbought": False,
-            "price_near_bb_lower": False, "price_near_bb_upper": False,
-            "bb_contracting": False, "bb_expanding": False,
-            "volume_spike_recent": False
-        }
+        btc_market_conditions = get_default_market_conditions()
 
     # --- Load ETH Data ---
     try:
@@ -528,19 +479,7 @@ def load_initial_data():
             eth_market_data_df = pd.DataFrame()
             eth_current_price = 0.0
             eth_sentiment_score = 0.0
-            eth_market_conditions = {
-                "bullish_trend": False, "oversold": False, "overbought": False,
-                "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-                "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-                "stoch_k": 50.0, "stoch_d": 50.0,
-                "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-                "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-                "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-                "stoch_oversold": False, "stoch_overbought": False,
-                "price_near_bb_lower": False, "price_near_bb_upper": False,
-                "bb_contracting": False, "bb_expanding": False,
-                "volume_spike_recent": False
-            }
+            eth_market_conditions = get_default_market_conditions()
         else:
             print("Adding technical indicators for ETH...")
             df_eth = add_technical_indicators(df_eth)
@@ -560,19 +499,7 @@ def load_initial_data():
         eth_market_data_df = pd.DataFrame()
         eth_current_price = 0.0
         eth_sentiment_score = 0.0
-        eth_market_conditions = {
-            "bullish_trend": False, "oversold": False, "overbought": False,
-            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-            "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-            "stoch_k": 50.0, "stoch_d": 50.0,
-            "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-            "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-            "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-            "stoch_oversold": False, "stoch_overbought": False,
-            "price_near_bb_lower": False, "price_near_bb_upper": False,
-            "bb_contracting": False, "bb_expanding": False,
-            "volume_spike_recent": False
-        }
+        eth_market_conditions = get_default_market_conditions()
 
 # Load data when the Flask app starts
 with app.app_context():
@@ -630,7 +557,7 @@ def get_market_data():
 
 @app.route('/api/predict', methods=['POST'])
 def predict_outcome():
-    """Performs prediction for the selected cryptocurrency and sends a Telegram alert."""
+    """Performs prediction for the selected cryptocurrency."""
     data = request.get_json()
     target_price = data.get('target_price')
     target_time_str = data.get('target_time') # HH:MM in IST
@@ -643,7 +570,7 @@ def predict_outcome():
 
     df_to_use = None
     current_price_to_use = 0.0
-    sentiment_to_use = 0.0
+    sentiment_to_use = 0.0 # This variable holds the sentiment score from the global store
     market_conditions_to_use = {}
     crypto_name_full = ""
 
@@ -679,107 +606,71 @@ def predict_outcome():
         result = recommend_probo_vote_for_target(
             df=df_to_use,
             current_price=current_price_to_use,
-            sentiment_score=sentiment_to_use,
+            sentiment_score=sentiment_to_use, # Pass this sentiment to the prediction function
             target_price=target_price,
-            target_time_str=target_datetime_utc.strftime("%H:%M")
+            target_time_str=target_datetime_utc.strftime("%H:%M") 
         )
         result['hours_remaining'] = hours_remaining
-        result['target_time'] = target_time_str # Keep original IST string for frontend display
+        result['target_time_ist'] = target_time_str # Keep original IST string for frontend display
         result['currency'] = currency # Add currency to result
 
-        trust_signals = 0
-        caution_flags = 0
+        # Define sentiment_for_advisor here, *after* result is populated
+        # This sentiment_for_advisor will be the (potentially rounded) sentiment from the prediction logic's result
+        sentiment_for_advisor = result['sentiment']
 
-        hours_remaining_float = result['hours_remaining']
-        sentiment_score = result['sentiment']
-
-        # Retrieve stoch_k and stoch_d from market_conditions_to_use
+        # Retrieve stoch_k and stoch_d from market_conditions_to_use for confidence advisor calculations
         stoch_k = market_conditions_to_use.get('stoch_k')
         stoch_d = market_conditions_to_use.get('stoch_d')
 
-        # Evaluate Trust Conditions (Total 12 signals now)
-        if hours_remaining_float < 2: trust_signals += 1
-        if market_conditions_to_use['bullish_trend'] and not market_conditions_to_use['macd_bearish_crossover']: trust_signals += 1 # Stronger trend check
-        if abs(sentiment_score) > 0.2: trust_signals += 1
-        if market_conditions_to_use['rsi'] is not None and 30 <= market_conditions_to_use['rsi'] <= 70: trust_signals += 1
-        if abs(sentiment_score) > 0.05 and not market_conditions_to_use['volume_spike_recent']: trust_signals += 1 # No major news expected, and no sudden volume
-        if market_conditions_to_use['candle_bodies_stable'] and not market_conditions_to_use['candle_volatility_high']: trust_signals += 1 # Stable candles, not highly volatile
-        if market_conditions_to_use['macd_bullish_crossover'] and market_conditions_to_use['macd_hist'] > 0: trust_signals += 1 # Confirmed MACD bullish crossover
-        if market_conditions_to_use['stoch_oversold'] and not market_conditions_to_use['stoch_overbought'] and (stoch_k is not None and stoch_d is not None and stoch_k > stoch_d): trust_signals += 1 # Stochastic oversold with bullish cross
-        if market_conditions_to_use['price_near_bb_lower'] and not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding']: trust_signals += 1 # Price near lower BB, not in squeeze/expansion
-        if not market_conditions_to_use['massive_move_recent']: trust_signals += 1 # No massive recent moves (predictability)
-        if not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding']: trust_signals += 1 # Stable Bollinger Bands
-        if not market_conditions_to_use['volume_spike_recent']: trust_signals += 1 # No recent volume spike (less unpredictable)
+        # --- Evaluate Trust Conditions (12 signals) ---
+        trust_conditions_eval = {
+            'time_expiry_lt_2hr': hours_remaining >= 0.25 and hours_remaining < 2, # Must be active and <2hr
+            'trending_cleanly': market_conditions_to_use['bullish_trend'] is True and market_conditions_to_use['macd_bearish_crossover'] is False,
+            'sentiment_strong': abs(sentiment_for_advisor) > 0.2, # Use the correctly defined sentiment_for_advisor
+            'rsi_neutral': market_conditions_to_use['rsi'] is not None and 30 <= market_conditions_to_use['rsi'] <= 70,
+            'no_major_news_expected': abs(sentiment_for_advisor) > 0.05, # Proxy for market conviction, not flat sentiment
+            'candle_bodies_stable_not_volatile': market_conditions_to_use['candle_bodies_stable'] is True and market_conditions_to_use['candle_volatility_high'] is False,
+            'macd_bullish_crossover_confirmed': market_conditions_to_use['macd_bullish_crossover'] is True, # Already implies hist > 0 from definition
+            'stoch_oversold_bullish_cross': market_conditions_to_use['stoch_oversold'] is True and (stoch_k is not None and stoch_d is not None and stoch_k > stoch_d),
+            'price_near_bb_lower': market_conditions_to_use['price_near_bb_lower'] is True,
+            'no_massive_move_recent': market_conditions_to_use['massive_move_recent'] is False,
+            'bb_stable': market_conditions_to_use['bb_contracting'] is False and market_conditions_to_use['bb_expanding'] is False,
+            'no_volume_spike_recent': market_conditions_to_use['volume_spike_recent'] is False
+        }
+        trust_signals = sum(1 for k, v in trust_conditions_eval.items() if v)
 
+        # --- Evaluate Caution Conditions (11 flags as per UI structure) ---
+        caution_conditions_eval = {
+            'target_time_gt_3hr': hours_remaining > 3,
+            'btc_massive_move': market_conditions_to_use['massive_move_recent'] is True,
+            'rsi_extreme': market_conditions_to_use['overbought'] is True or market_conditions_to_use['oversold'] is True,
+            'sentiment_conflicting': abs(sentiment_for_advisor) < 0.05, # Use the correctly defined sentiment_for_advisor
+            'big_news_coming_or_volume_spike': abs(sentiment_for_advisor) < 0.05 or market_conditions_to_use['volume_spike_recent'] is True,
+            'candle_volatility_high': market_conditions_to_use['candle_volatility_high'] is True,
+            'macd_bearish_crossover_confirmed': market_conditions_to_use['macd_bearish_crossover'] is True, # Already implies hist < 0 from definition
+            'stoch_overbought_bearish_cross': market_conditions_to_use['stoch_overbought'] is True and (stoch_k is not None and stoch_d is not None and stoch_k < stoch_d),
+            'price_near_bb_upper_or_bb_volatile': market_conditions_to_use['price_near_bb_upper'] is True or market_conditions_to_use['bb_contracting'] is True or market_conditions_to_use['bb_expanding'] is True,
+            'bb_volatile': market_conditions_to_use['bb_contracting'] is True or market_conditions_to_use['bb_expanding'] is True, # Distinct general volatility flag
+            'volume_spike_recent': market_conditions_to_use['volume_spike_recent'] is True # Distinct volume spike flag
+        }
+        caution_flags = sum(1 for k, v in caution_conditions_eval.items() if v)
 
-        # Evaluate Caution Conditions (Total 12 flags now)
-        if hours_remaining_float > 3: caution_flags += 1
-        if market_conditions_to_use['overbought'] or market_conditions_to_use['oversold']: caution_flags += 1
-        if abs(sentiment_score) < 0.05: caution_flags += 1
-        if market_conditions_to_use['massive_move_recent']: caution_flags += 1
-        if abs(sentiment_score) < 0.05 or market_conditions_to_use['volume_spike_recent']: caution_flags += 1 # Big news coming or sudden volume
-        if market_conditions_to_use['candle_volatility_high']: caution_flags += 1
-        if market_conditions_to_use['macd_bearish_crossover'] and market_conditions_to_use['macd_hist'] < 0: caution_flags += 1 # Confirmed MACD bearish crossover
-        if market_conditions_to_use['stoch_overbought'] and not market_conditions_to_use['stoch_oversold'] and (stoch_k is not None and stoch_d is not None and stoch_k < stoch_d): caution_flags += 1 # Stochastic overbought with bearish cross
-        if market_conditions_to_use['price_near_bb_upper'] or market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding']: caution_flags += 1 # Price near upper BB or BB in squeeze/expansion
-        if market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding']: caution_flags += 1 # Bollinger Bands squeezing or expanding
-        if market_conditions_to_use['volume_spike_recent']: caution_flags += 1 # Recent volume spike (unpredictability)
-
-
-        # Update total counts for advice message (now 12 for both trust and caution)
-        if trust_signals >= 7 and caution_flags < 4: # Adjusted thresholds for more signals
-            advice_message = "🔐 Confidence: *GO with the vote!* (Trust: {}/12, Caution: {}/12)".format(trust_signals, caution_flags)
-        elif caution_flags >= 4: # Adjusted thresholds
-            advice_message = "🔐 Confidence: *SKIP the trade or WAIT!* (Trust: {}/12, Caution: {}/12)".format(trust_signals, caution_flags)
+        # Determine overall advice
+        if trust_signals >= 7 and caution_flags < 4:
+            advice_message = "🔐 Confidence: *GO with the vote!* Strong signals align."
+        elif caution_flags >= 4:
+            advice_message = "🔐 Confidence: *SKIP the trade or WAIT!* High uncertainty detected."
         else:
-            advice_message = "🔐 Confidence: *Proceed with caution or wait for clearer signals.* (Trust: {}/12, Caution: {}/12)".format(trust_signals, caution_flags)
+            advice_message = "🔐 Confidence: *Proceed with caution or wait for clearer signals.* Mixed indicators."
 
         result['confidence_advisor'] = {
             'trust_signals_count': trust_signals,
             'caution_flags_count': caution_flags,
             'advice_message': advice_message,
-            'trust_conditions': {
-                'time_expiry_lt_2hr': hours_remaining_float < 2,
-                'trending_cleanly': bool(market_conditions_to_use['bullish_trend'] and not market_conditions_to_use['macd_bearish_crossover']),
-                'sentiment_strong': abs(sentiment_score) > 0.2,
-                'rsi_neutral': bool(market_conditions_to_use['rsi'] is not None and 30 <= market_conditions_to_use['rsi'] <= 70),
-                'no_major_news_expected_no_volume_spike': abs(sentiment_score) > 0.05 and not market_conditions_to_use['volume_spike_recent'],
-                'candle_bodies_stable_not_volatile': market_conditions_to_use['candle_bodies_stable'] and not market_conditions_to_use['candle_volatility_high'],
-                'macd_bullish_crossover_confirmed': market_conditions_to_use['macd_bullish_crossover'] and market_conditions_to_use['macd_hist'] > 0,
-                'stoch_oversold_bullish_cross': market_conditions_to_use['stoch_oversold'] and not market_conditions_to_use['stoch_overbought'] and (stoch_k is not None and stoch_d is not None and stoch_k > stoch_d),
-                'price_near_bb_lower_stable_bands': market_conditions_to_use['price_near_bb_lower'] and not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding'],
-                'no_massive_move_recent': not market_conditions_to_use['massive_move_recent'],
-                'bb_stable': not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding'],
-                'no_volume_spike_recent': not market_conditions_to_use['volume_spike_recent']
-            },
-            'caution_conditions': {
-                'target_time_gt_3hr': hours_remaining_float > 3,
-                'rsi_extreme': bool(market_conditions_to_use['overbought'] or market_conditions_to_use['oversold']),
-                'sentiment_conflicting': abs(sentiment_score) < 0.05,
-                'btc_massive_move': market_conditions_to_use['massive_move_recent'],
-                'big_news_coming_or_volume_spike': abs(sentiment_score) < 0.05 or market_conditions_to_use['volume_spike_recent'],
-                'candle_volatility_high': market_conditions_to_use['candle_volatility_high'],
-                'macd_bearish_crossover_confirmed': market_conditions_to_use['macd_bearish_crossover'] and market_conditions_to_use['macd_hist'] < 0,
-                'stoch_overbought_bearish_cross': market_conditions_to_use['stoch_overbought'] and not market_conditions_to_use['stoch_oversold'] and (stoch_k is not None and stoch_d is not None and stoch_k < stoch_d),
-                'price_near_bb_upper_or_bb_volatile': market_conditions_to_use['price_near_bb_upper'] or market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding'],
-                'bb_volatile': market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding'],
-                'volume_spike_recent': market_conditions_to_use['volume_spike_recent']
-            }
+            'trust_conditions': trust_conditions_eval,
+            'caution_conditions': caution_conditions_eval
         }
-
-        alert_message = (
-            f"📣 *{currency} Probo Vote Recommendation*\n"
-            f"🕒 Target Time (IST): *{target_time_str}*\n"
-            f"🎯 Target Price: *${result['target_price']}*\n"
-            f"💰 Current: *${result['current_price']:.2f}*\n"
-            f"📈 Projected: *${result['projected_price']:.2f}*\n"
-            f"💬 Sentiment: *{result['sentiment']:.2f}*\n"
-            f"✅ Vote: *{result['vote']}*\n"
-            f"\n--- Confidence Advisor ---\n"
-            f"{advice_message}"
-        )
-        send_telegram_alert(alert_message)
-
+        
         return jsonify(result)
     except ValueError as ve:
         return jsonify({"error": f"Invalid input or time format: {ve}"}), 400

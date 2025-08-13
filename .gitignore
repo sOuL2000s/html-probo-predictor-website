@@ -1,0 +1,15 @@
+# Python
+*.pyc
+__pycache__/
+venv/
+.env
+
+# MacOS
+.DS_Store
+
+# IDEs (add as needed)
+.vscode/
+.idea/
+
+# Plotly temp files
+plotly_images/

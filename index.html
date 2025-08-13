@@ -14,11 +14,12 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <!-- Favicon links (ensure these files are in your root directory) -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
-    <link rel="shortcut icon" href="/favicon.ico"> <!-- Generic favicon -->
+    <!-- You might want to create and include proper favicons if deploying -->
+    <!-- <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"> -->
+    <!-- <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"> -->
+    <!-- <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png"> -->
+    <!-- <link rel="manifest" href="/site.webmanifest"> -->
+    <!-- <link rel="shortcut icon" href="/favicon.ico"> -->
 
     <style>
         body {
@@ -84,24 +85,24 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.75rem 0;
+            padding: 0.75rem 1rem; /* Added horizontal padding */
             font-weight: 600;
             color: #DAA520; /* Goldenrod */
             border-bottom: 1px solid #444444;
-            transition: background-color 0.2s ease-in-out; /* Smooth hover */
+            transition: background-color 0.2s ease-in-out, border-radius 0.2s ease-in-out;
         }
         .expander-header:hover {
-            background-color: #222222; /* Darker grey on hover */
+            background-color: #2a2a2a; /* Slightly darker grey on hover */
             border-radius: 0.5rem; /* Apply border-radius on hover */
         }
         .expander-content {
             max-height: 0;
             overflow: hidden;
             transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
-            padding: 0 1rem;
+            padding: 0 1rem; /* Horizontal padding always, vertical only when expanded */
         }
         .expander-content.expanded {
-            max-height: 9999px;
+            max-height: 9999px; /* Large enough value */
             padding: 1rem;
         }
         .arrow {
@@ -172,8 +173,10 @@
             100% { transform: rotate(360deg); }
         }
         /* Text colors for YES/NO in confidence advisor */
-        .text-green-400 { color: #9ae6b4; } /* Adjusted green for better contrast */
-        .text-red-400 { color: #feb2b2; } /* Adjusted red for better contrast */
+        .text-green-400 { color: #82E0AA; } /* Adjusted green for better contrast */
+        .text-red-400 { color: #F1948A; } /* Adjusted red for better contrast */
+        .check-icon { color: #28B463; } /* Stronger green for checkmark */
+        .cross-icon { color: #E74C3C; } /* Stronger red for crossmark */
     </style>
 </head>
 <body class="antialiased">
@@ -182,18 +185,22 @@
             <i class="fas fa-chart-line text-gold-500 mr-3"></i> Crypto Probo Predictor
         </h1>
 
+        <div class="text-center text-gray-400 mb-6">
+            <p>Unveiling the future of crypto with advanced analytics. Input your Probo deal details to receive an AI-powered prediction and confidence assessment.</p>
+        </div>
+
         <!-- Currency Selector -->
         <div class="bg-gray-900 p-4 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
             <span class="text-xl font-medium text-gray-400 mb-2 md:mb-0">
                 <i class="fas fa-coins text-gold-300 mr-2"></i> Select Cryptocurrency:
             </span>
             <div class="flex space-x-4">
-                <label class="inline-flex items-center">
-                    <input type="radio" class="form-radio text-yellow-500" name="currency" value="BTC" checked>
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="radio" class="form-radio text-yellow-500 h-5 w-5" name="currency" value="BTC" checked>
                     <span class="ml-2 text-gold-300"><i class="fab fa-btc mr-1"></i> Bitcoin (BTC)</span>
                 </label>
-                <label class="inline-flex items-center">
-                    <input type="radio" class="form-radio text-yellow-500" name="currency" value="ETH">
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="radio" class="form-radio text-yellow-500 h-5 w-5" name="currency" value="ETH">
                     <span class="ml-2 text-gold-300"><i class="fab fa-ethereum mr-1"></i> Ethereum (ETH)</span>
                 </label>
             </div>
@@ -233,14 +240,14 @@
 
         <div id="prediction-results" class="mt-6 space-y-4">
             <!-- Prediction Summary -->
-            <div id="prediction-summary-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <div id="prediction-summary-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
                     <i class="fas fa-chart-pie text-gold-300 mr-2"></i> Prediction Summary
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
             <div id="prediction-summary-content" class="expander-content bg-gray-900 rounded-lg">
-                <div class="p-4">
+                <div class="p-4 space-y-2">
                     <p class="text-gold-300"><strong class="text-gold-100">Current Price:</strong> <span id="summary-current-price">$0.00</span></p>
                     <p class="text-gold-300"><strong class="text-gold-100">Avg Δ/hr:</strong> <span id="summary-avg-delta">$0.00</span></p>
                     <p class="text-gold-300"><strong class="text-gold-100">Time Left:</strong> <span id="summary-time-left">0 hr(s)</span></p>
@@ -251,7 +258,7 @@
             </div>
 
             <!-- Recommended Vote -->
-            <div id="recommended-vote-message" class="hidden"></div>
+            <div id="recommended-vote-message" class="hidden text-center text-xl font-bold py-3 px-4 rounded-lg"></div>
 
             <!-- Prediction Confidence Advisor -->
             <hr class="border-gray-800 my-6">
@@ -259,61 +266,61 @@
                 <i class="fas fa-lightbulb text-gold-500 mr-2"></i> Prediction Confidence Advisor
             </h3>
 
-            <div id="trust-signals-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <div id="trust-signals-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
                     <i class="fas fa-shield-alt text-green-400 mr-2"></i> Trust Signals
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
             <div id="trust-signals-content" class="expander-content bg-gray-900 rounded-lg">
-                <ul class="list-disc list-inside text-gold-300 space-y-1 p-4">
-                    <li>Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
-                    <li><span id="trust-trend-text">BTC</span> is trending cleanly (up or down): <span id="trust-trend"></span></li>
-                    <li>Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
-                    <li>RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
-                    <li>No major news expected: <span id="trust-news"></span></li>
-                    <li>Candle bodies are stable (not huge wicks): <span id="trust-stable-candles"></span></li>
-                    <li>MACD shows bullish crossover: <span id="trust-macd-bullish"></span></li>
-                    <li>Stochastic is oversold (potential rebound): <span id="trust-stoch-oversold"></span></li>
-                    <li>Price near lower Bollinger Band (potential support): <span id="trust-bb-lower"></span></li>
-                    <li>No massive move recently: <span id="trust-no-massive-move"></span></li>
-                    <li>Bollinger Bands are stable (not squeezing/expanding): <span id="trust-bb-stable"></span></li>
-                    <li>No recent volume spike: <span id="trust-no-volume-spike"></span></li>
+                <ul class="list-none text-gold-300 space-y-2 p-4">
+                    <li><span id="trust-time-icon"></span> Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
+                    <li><span id="trust-trend-icon"></span> <span id="trust-currency-name">BTC</span> is trending cleanly (up or down): <span id="trust-trend"></span></li>
+                    <li><span id="trust-sentiment-icon"></span> Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
+                    <li><span id="trust-rsi-icon"></span> RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
+                    <li><span id="trust-news-icon"></span> No major news expected (Sentiment not conflicting): <span id="trust-news"></span></li>
+                    <li><span id="trust-stable-candles-icon"></span> Candle bodies are stable (not huge wicks): <span id="trust-stable-candles"></span></li>
+                    <li><span id="trust-macd-bullish-icon"></span> MACD shows bullish crossover: <span id="trust-macd-bullish"></span></li>
+                    <li><span id="trust-stoch-oversold-icon"></span> Stochastic is oversold (potential rebound): <span id="trust-stoch-oversold"></span></li>
+                    <li><span id="trust-bb-lower-icon"></span> Price near lower Bollinger Band (potential support): <span id="trust-bb-lower"></span></li>
+                    <li><span id="trust-no-massive-move-icon"></span> No massive move recently: <span id="trust-no-massive-move"></span></li>
+                    <li><span id="trust-bb-stable-icon"></span> Bollinger Bands are stable (not squeezing/expanding): <span id="trust-bb-stable"></span></li>
+                    <li><span id="trust-no-volume-spike-icon"></span> No recent volume spike: <span id="trust-no-volume-spike"></span></li>
                 </ul>
             </div>
 
-            <div id="caution-flags-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <div id="caution-flags-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
                     <i class="fas fa-exclamation-triangle text-red-400 mr-2"></i> Caution Flags
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
             <div id="caution-flags-content" class="expander-content bg-gray-900 rounded-lg">
-                <ul class="list-disc list-inside text-gold-300 space-y-1 p-4">
-                    <li>Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
-                    <li><span id="caution-massive-move-text">BTC</span> just made a massive move: <span id="caution-massive-move"></span></li>
-                    <li>RSI is &gt; 75 or &lt; 25: <span id="caution-rsi"></span></li>
-                    <li>Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
-                    <li>Big news coming (Fed rate hike, CPI data): <span id="caution-big-news"></span></li>
-                    <li>Candle volatility is high (huge wicks): <span id="caution-volatile-candles"></span></li>
-                    <li>MACD shows bearish crossover: <span id="caution-macd-bearish"></span></li>
-                    <li>Stochastic is overbought (potential reversal): <span id="caution-stoch-overbought"></span></li>
-                    <li>Price near upper Bollinger Band or BB contracting: <span id="caution-bb-upper-contracting"></span></li>
-                    <li>Bollinger Bands are volatile (squeezing/expanding): <span id="caution-bb-volatile"></span></li>
-                    <li>Recent volume spike: <span id="caution-volume-spike"></span></li>
+                <ul class="list-none text-gold-300 space-y-2 p-4">
+                    <li><span id="caution-time-icon"></span> Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
+                    <li><span id="caution-massive-move-icon"></span> <span id="caution-currency-name">BTC</span> just made a massive move: <span id="caution-massive-move"></span></li>
+                    <li><span id="caution-rsi-icon"></span> RSI is &gt; 70 or &lt; 30 (extreme): <span id="caution-rsi"></span></li>
+                    <li><span id="caution-sentiment-icon"></span> Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
+                    <li><span id="caution-big-news-icon"></span> Market Volatility due to News/Events (sentiment conflicting OR volume spike): <span id="caution-big-news"></span></li>
+                    <li><span id="caution-volatile-candles-icon"></span> Candle volatility is high (huge wicks): <span id="caution-volatile-candles"></span></li>
+                    <li><span id="caution-macd-bearish-icon"></span> MACD shows bearish crossover: <span id="caution-macd-bearish"></span></li>
+                    <li><span id="caution-stoch-overbought-icon"></span> Stochastic is overbought (potential reversal): <span id="caution-stoch-overbought"></span></li>
+                    <li><span id="caution-bb-upper-contracting-icon"></span> Price near upper Bollinger Band or BB contracting: <span id="caution-bb-upper-contracting"></span></li>
+                    <li><span id="caution-bb-volatile-icon"></span> Bollinger Bands are volatile (squeezing/expanding): <span id="caution-bb-volatile"></span></li>
+                    <li><span id="caution-volume-spike-icon"></span> Recent volume spike: <span id="caution-volume-spike"></span></li>
                 </ul>
             </div>
 
             <hr class="border-gray-800 my-6">
-            <p class="text-gold-300"><strong class="text-gold-100">Total Trust Signals Met:</strong> <span id="total-trust-signals">0</span></p>
-            <p class="text-gold-300"><strong class="text-gold-100">Total Caution Flags Present:</strong> <span id="total-caution-flags">0</span></p>
+            <p class="text-gold-300 text-lg"><strong class="text-gold-100">Total Trust Signals Met:</strong> <span id="total-trust-signals" class="text-green-400 font-bold">0</span></p>
+            <p class="text-gold-300 text-lg"><strong class="text-gold-100">Total Caution Flags Present:</strong> <span id="total-caution-flags" class="text-red-400 font-bold">0</span></p>
             <div id="pro-tip-message" class="mt-4"></div>
         </div>
 
         <hr class="border-gray-800 my-6">
 
         <!-- Technical Indicators -->
-        <div id="technical-indicators-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+        <div id="technical-indicators-expander" class="expander-header rounded-lg bg-gray-900">
             <span class="text-lg text-gold-100">
                 <i class="fas fa-flask text-gold-300 mr-2"></i> Technical Indicators
             </span>
@@ -350,7 +357,7 @@
                     <div id="metric-bb" class="text-xl font-bold text-gold-300">0.00 / 0.00 / 0.00</div>
                 </div>
             </div>
-            <div class="mt-4 text-gold-300 p-4 pt-0">
+            <div class="mt-4 text-gold-300 p-4 pt-0 space-y-1">
                 <p><strong class="text-gold-100">Trend:</strong> <span id="market-trend"></span></p>
                 <p><strong class="text-gold-100">RSI Zone:</strong> <span id="market-rsi-zone"></span></p>
                 <p><strong class="text-gold-100">Stochastic Zone:</strong> <span id="market-stoch-zone"></span></p>
@@ -361,7 +368,7 @@
         <hr class="border-gray-800 my-6">
 
         <!-- Chart -->
-        <div id="chart-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+        <div id="chart-expander" class="expander-header rounded-lg bg-gray-900">
             <span class="text-lg text-gold-100">
                 <i class="fas fa-chart-area text-gold-300 mr-2"></i> View Chart
             </span>
@@ -373,6 +380,19 @@
 
         <hr class="border-gray-800 my-6">
 
+        <!-- Overlay Feature Explanation -->
+        <div class="warning-message text-center mb-6">
+            <h3 class="font-bold text-lg mb-2">
+                <i class="fas fa-exclamation-circle mr-2"></i> Important Note on Mobile Overlay
+            </h3>
+            <p class="text-sm">
+                The requested feature to scan your phone screen for Probo data and overlay predictions is **not technically possible** within a standard web application due to strict security and privacy policies of web browsers and mobile operating systems (iOS/Android).
+            </p>
+            <p class="text-sm mt-2">
+                Websites are restricted from accessing content outside their own tab. Implementing such a feature would require developing a complex native mobile application with special OS permissions, which is beyond the scope of a web-based project. Please manually input the data from Probo into this tool.
+            </p>
+        </div>
+
         <!-- Cheat Sheet Reference -->
         <h2 class="text-2xl font-semibold mb-4 text-gold-100">
             <i class="fas fa-book-open text-gold-500 mr-2"></i> Crypto Probo Prediction Cheat Sheet Reference
@@ -380,96 +400,49 @@
         <p class="text-gold-400 mb-4">This section provides the original guidelines for reference, updated with new indicators.</p>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">✅ TRUST the Prediction When:</h3>
-        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
-            <li><strong>Condition</strong>: Time to expiry is &lt; 2 hours
-                <ul><li><strong>Why</strong>: Short-term moves are easier to project with recent trend/sentiment</li></ul>
-            </li>
-            <li><strong>Condition</strong>: BTC is trending cleanly (up or down)
-                <ul><li><strong>Why</strong>: EMA crossover + delta will align clearly</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Sentiment score is strongly positive/negative (&gt;0.2)
-                <ul><li><strong>Why</strong>: Clear market direction from sentiment</li></ul>
-            </li>
-            <li><strong>Condition</strong>: RSI is not extreme (30–70)
-                <ul><li><strong>Why</strong>: Means no strong mean-reversion counterforces</li></ul>
-            </li>
-            <li><strong>Condition</strong>: No major news expected
-                <ul><li><strong>Why</strong>: Market moves more "technically" in news-free windows</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Candle bodies are stable (not huge wicks)
-                <ul><li><strong>Why</strong>: Less noise = better delta prediction accuracy</li></ul>
-            </li>
-            <li><strong>Condition</strong>: MACD shows bullish crossover
-                <ul><li><strong>Why</strong>: Indicates strengthening upward momentum</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Stochastic is oversold (potential rebound)
-                <ul><li><strong>Why</strong>: Price may be due for an upward correction</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Price near lower Bollinger Band (potential support)
-                <ul><li><strong>Why</strong>: Suggests price is at a strong support level</li></ul>
-            </li>
-            <li><strong>Condition</strong>: No massive move recently
-                <ul><li><strong>Why</strong>: Predictable price action</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Bollinger Bands are stable (not squeezing/expanding)
-                <ul><li><strong>Why</strong>: Less volatility uncertainty</li></ul>
-            </li>
-            <li><strong>Condition</strong>: No recent volume spike
-                <ul><li><strong>Why</strong>: Market not reacting to sudden news/events</li></ul>
-            </li>
+        <ul class="list-disc list-inside text-gold-300 space-y-2 mb-4">
+            <li><strong>Time to expiry is &lt; 2 hours</strong>: Short-term moves are easier to project with recent trend/sentiment.</li>
+            <li><strong>[Currency] is trending cleanly (up or down)</strong>: EMA crossover + delta will align clearly; MACD bearish crossover is absent.</li>
+            <li><strong>Sentiment score is strongly positive/negative (&gt;0.2)</strong>: Clear market direction from sentiment.</li>
+            <li><strong>RSI is not extreme (30–70)</strong>: Means no strong mean-reversion counterforces.</li>
+            <li><strong>No major news expected</strong>: Market moves more "technically" in news-free windows; sentiment score > 0.05.</li>
+            <li><strong>Candle bodies are stable (not huge wicks)</strong>: Less noise = better delta prediction accuracy. Candle volatility is low.</li>
+            <li><strong>MACD shows bullish crossover</strong>: Indicates strengthening upward momentum; MACD line > Signal line and Histogram > 0.</li>
+            <li><strong>Stochastic is oversold (potential rebound)</strong>: Price may be due for an upward correction; %K &lt; 20, %D &lt; 20, and %K > %D.</li>
+            <li><strong>Price near lower Bollinger Band (potential support)</strong>: Suggests price is at a strong support level.</li>
+            <li><strong>No massive move recently</strong>: Predictable price action.</li>
+            <li><strong>Bollinger Bands are stable (not squeezing/expanding)</strong>: Less volatility uncertainty.</li>
+            <li><strong>No recent volume spike</strong>: Market not reacting to sudden news/events.</li>
         </ul>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">⚠️ BE CAUTIOUS / DOUBLE-CHECK When:</h3>
-        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
-            <li><strong>Red Flag</strong>: Target time is &gt; 3 hours away
-                <ul><li><strong>Why</strong>: Market conditions may shift unpredictably</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: BTC just made a massive move
-                <ul><li><strong>Why</strong>: Mean reversion likely → momentum may reverse</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: RSI is &gt; 75 or &lt; 25
-                <ul><li><strong>Why</strong>: Overbought/oversold zones are prone to reversals</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Sentiment is conflicting (score ≈ 0)
-                <ul><li><strong>Why</strong>: Market indecisive — avoid betting</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Big news coming (Fed rate hike, CPI data)
-                <ul><li><strong>Why</strong>: Trends and sentiment can break instantly</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Candle volatility is high (huge wicks)
-                <ul><li><strong>Why</strong>: Delta estimates become noisy and inaccurate</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: MACD shows bearish crossover
-                <ul><li><strong>Why</strong>: Indicates strengthening downward momentum</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Stochastic is overbought (potential reversal)
-                <ul><li><strong>Why</b>: Price may be due for a downward correction</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Price near upper Bollinger Band or BB contracting
-                <ul><li><strong>Why</strong>: Suggests strong resistance or potential for volatile breakout</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Bollinger Bands are volatile (squeezing/expanding)
-                <ul><li><strong>Why</strong>: High uncertainty, potential for sharp moves</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Recent volume spike
-                <ul><li><strong>Why</strong>: Market reacting to sudden news/events, unpredictable</li></ul>
-            </li>
+        <ul class="list-disc list-inside text-gold-300 space-y-2 mb-4">
+            <li><strong>Target time is &gt; 3 hours away</strong>: Market conditions may shift unpredictably.</li>
+            <li><strong>[Currency] just made a massive move</strong>: Mean reversion likely → momentum may reverse.</li>
+            <li><strong>RSI is &gt; 70 or &lt; 30 (extreme)</strong>: Overbought/oversold zones are prone to reversals.</li>
+            <li><strong>Sentiment is conflicting (score ≈ 0)</strong>: Market indecisive — avoid betting.</li>
+            <li><strong>Market Volatility due to News/Events (sentiment conflicting OR volume spike)</strong>: Trends and sentiment can break instantly due to external factors or sudden interest.</li>
+            <li><strong>Candle volatility is high (huge wicks)</strong>: Delta estimates become noisy and inaccurate.</li>
+            <li><strong>MACD shows bearish crossover</strong>: Indicates strengthening downward momentum; MACD line &lt; Signal line and Histogram &lt; 0.</li>
+            <li><strong>Stochastic is overbought (potential reversal)</strong>: Price may be due for a downward correction; %K &gt; 80, %D &gt; 80, and %K &lt; %D.</li>
+            <li><strong>Price near upper Bollinger Band or BB contracting</strong>: Suggests strong resistance or potential for volatile breakout.</li>
+            <li><strong>Bollinger Bands are volatile (squeezing/expanding)</strong>: High uncertainty, potential for sharp moves.</li>
+            <li><strong>Recent volume spike</strong>: Market reacting to sudden news/events, unpredictable.</li>
         </ul>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">🔐 Pro Tip (Original Reference):</h3>
-        <p class="text-gold-300 mb-2">If at least 7/12 “Trust” signals align → GO with the vote.</p>
+        <p class="text-gold-300 mb-2">If at least 7/12 “Trust” signals align AND less than 4 “Caution” flags are present → GO with the vote.</p>
         <p class="text-gold-300 mb-4">If 4+ “Caution” flags are present → SKIP the trade or wait.</p>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
         <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li>Time: 1 hour left</li>
-            <li>BTC uptrending</li>
-            <li>EMA20 &gt; EMA50</li>
-            <li>RSI = 58</li>
-            <li>Sentiment = +0.3</li>
+            <li>BTC uptrending (EMA20 &gt; EMA50, no bearish MACD cross)</li>
+            <li>RSI = 58 (Neutral)</li>
+            <li>Sentiment = +0.3 (Strong positive)</li>
             <li>MACD bullish crossover</li>
-            <li>Stochastic not extreme</li>
-            <li>Price not near BB extremes</li>
+            <li>Stochastic not extreme (e.g., 40, 35)</li>
+            <li>Price not near BB extremes (e.g., mid-band)</li>
             <li>No massive move recently</li>
             <li>BB stable</li>
             <li>No recent volume spike</li>
@@ -479,11 +452,11 @@
         <h3 class="text-xl font-semibold text-gold-100 mb-2">⚠️ Example: When to AVOID (Original Reference)</h3>
         <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li>Time: 4 hours left</li>
-            <li>BTC dumped $800 in 15 mins</li>
-            <li>RSI = 22</li>
-            <li>Sentiment = 0.05</li>
+            <li>BTC dumped $800 in 15 mins (Massive move)</li>
+            <li>RSI = 22 (Oversold)</li>
+            <li>Sentiment = 0.05 (Conflicting)</li>
             <li>MACD bearish crossover</li>
-            <li>Stochastic overbought</li>
+            <li>Stochastic overbought (e.g., 90, 85)</li>
             <li>Price near upper BB</li>
             <li>BB squeezing</li>
             <li>Recent volume spike</li>
@@ -521,7 +494,7 @@
         });
 
         // --- Backend API URL ---
-        const BACKEND_API_URL = 'https://html-probo-predictor-website.onrender.com'; // IMPORTANT: Change this for deployment!
+        const BACKEND_API_URL = 'http://localhost:5000'; // IMPORTANT: Change this for deployment!
 
         // Global data storage for both BTC and ETH
         let allMarketData = {
@@ -531,6 +504,23 @@
         let selectedCurrency = 'BTC'; // Default selected currency
 
         // --- UI Update Functions ---
+
+        function updateConfidenceSignal(elementId, isTrue) {
+            const element = document.getElementById(elementId);
+            const iconId = elementId + '-icon';
+            const iconElement = document.getElementById(iconId);
+
+            if (!element) return; // Guard against missing elements
+
+            if (isTrue) {
+                element.innerHTML = '<strong class="text-green-400">YES</strong>';
+                if (iconElement) iconElement.innerHTML = '<i class="fas fa-check-circle check-icon mr-2"></i>';
+            } else {
+                element.innerHTML = '<strong class="text-red-400">NO</strong>';
+                if (iconElement) iconElement.innerHTML = '<i class="fas fa-times-circle cross-icon mr-2"></i>';
+            }
+        }
+
 
         function updateUI(currencyData, predictionResult = null) {
             const { current_price, sentiment_score, market_conditions, chart_data } = currencyData;
@@ -542,31 +532,31 @@
             document.getElementById('current-price-display').textContent = `$${current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
             // Update Technical Indicators
-            document.getElementById('metric-rsi').textContent = market_conditions.rsi ? market_conditions.rsi.toFixed(2) : 'N/A';
-            document.getElementById('metric-ema20').textContent = market_conditions.ema_20 ? market_conditions.ema_20.toFixed(2) : 'N/A';
-            document.getElementById('metric-ema50').textContent = market_conditions.ema_50 ? market_conditions.ema_50.toFixed(2) : 'N/A';
-            document.getElementById('metric-macd').textContent = market_conditions.macd ? market_conditions.macd.toFixed(2) : 'N/A';
-            document.getElementById('metric-stochk').textContent = market_conditions.stoch_k ? market_conditions.stoch_k.toFixed(2) : 'N/A';
-            document.getElementById('metric-stochd').textContent = market_conditions.stoch_d ? market_conditions.stoch_d.toFixed(2) : 'N/A';
+            document.getElementById('metric-rsi').textContent = market_conditions.rsi !== null ? market_conditions.rsi.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema20').textContent = market_conditions.ema_20 !== null ? market_conditions.ema_20.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema50').textContent = market_conditions.ema_50 !== null ? market_conditions.ema_50.toFixed(2) : 'N/A';
+            document.getElementById('metric-macd').textContent = market_conditions.macd !== null ? market_conditions.macd.toFixed(2) : 'N/A';
+            document.getElementById('metric-stochk').textContent = market_conditions.stoch_k !== null ? market_conditions.stoch_k.toFixed(2) : 'N/A';
+            document.getElementById('metric-stochd').textContent = market_conditions.stoch_d !== null ? market_conditions.stoch_d.toFixed(2) : 'N/A';
             
-            const bbUpper = market_conditions.bb_upper ? market_conditions.bb_upper.toFixed(2) : 'N/A';
-            const bbMid = market_conditions.bb_mid ? market_conditions.bb_mid.toFixed(2) : 'N/A';
-            const bbLower = market_conditions.bb_lower ? market_conditions.bb_lower.toFixed(2) : 'N/A';
+            const bbUpper = market_conditions.bb_upper !== null ? market_conditions.bb_upper.toFixed(2) : 'N/A';
+            const bbMid = market_conditions.bb_mid !== null ? market_conditions.bb_mid.toFixed(2) : 'N/A';
+            const bbLower = market_conditions.bb_lower !== null ? market_conditions.bb_lower.toFixed(2) : 'N/A';
             document.getElementById('metric-bb').textContent = `${bbUpper} / ${bbMid} / ${bbLower}`;
-            document.getElementById('metric-bb-width').textContent = market_conditions.bb_width ? market_conditions.bb_width.toFixed(2) : 'N/A';
+            document.getElementById('metric-bb-width').textContent = market_conditions.bb_width !== null ? market_conditions.bb_width.toFixed(2) : 'N/A';
 
 
-            document.getElementById('market-trend').textContent = market_conditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
+            document.getElementById('market-trend').textContent = market_conditions.bullish_trend ? '📈 Uptrend (EMA20 > EMA50)' : '📉 Downtrend (EMA20 < EMA50)';
             let rsiZone = '';
-            if (market_conditions.overbought) rsiZone = '🔥 Overbought';
-            else if (market_conditions.oversold) rsiZone = '🧊 Oversold';
-            else rsiZone = '✅ Neutral';
+            if (market_conditions.overbought) rsiZone = '🔥 Overbought (>70)';
+            else if (market_conditions.oversold) rsiZone = '🧊 Oversold (<30)';
+            else rsiZone = '✅ Neutral (30-70)';
             document.getElementById('market-rsi-zone').textContent = rsiZone;
 
             let stochZone = '';
-            if (market_conditions.stoch_overbought) stochZone = '🔥 Overbought';
-            else if (market_conditions.stoch_oversold) stochZone = '🧊 Oversold';
-            else stochZone = '✅ Neutral';
+            if (market_conditions.stoch_overbought) stochZone = '🔥 Overbought (>80)';
+            else if (market_conditions.stoch_oversold) stochZone = '🧊 Oversold (<20)';
+            else stochZone = '✅ Neutral (20-80)';
             document.getElementById('market-stoch-zone').textContent = stochZone;
 
             // Update Chart
@@ -579,42 +569,53 @@
                 document.getElementById('summary-time-left').textContent = `${predictionResult.hours_remaining} hr(s)`;
                 document.getElementById('summary-projected-price').textContent = `$${predictionResult.projected_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 document.getElementById('summary-sentiment-score').textContent = predictionResult.sentiment.toFixed(2);
-                document.getElementById('summary-target-time').textContent = predictionResult.target_time;
+                document.getElementById('summary-target-time').textContent = predictionResult.target_time_ist; // Use IST string here
 
                 const voteMessageDiv = document.getElementById('recommended-vote-message');
-                voteMessageDiv.innerHTML = `<div class="success-message">🧠 Recommended Vote: <strong>${predictionResult.vote}</strong></div>`;
+                if (predictionResult.vote === "YES") {
+                    voteMessageDiv.className = 'success-message text-center text-xl font-bold py-3 px-4 rounded-lg';
+                    voteMessageDiv.innerHTML = `🧠 Recommended Vote: <strong class="text-green-400">YES</strong>`;
+                } else {
+                    voteMessageDiv.className = 'warning-message text-center text-xl font-bold py-3 px-4 rounded-lg';
+                    voteMessageDiv.innerHTML = `🧠 Recommended Vote: <strong class="text-red-400">NO</strong>`;
+                }
                 voteMessageDiv.classList.remove('hidden');
 
                 const confidence = predictionResult.confidence_advisor;
                 
                 // Update Trust Signals
-                document.getElementById('trust-time').innerHTML = confidence.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-trend-text').textContent = selectedCurrency;
-                document.getElementById('trust-trend').innerHTML = confidence.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
-                document.getElementById('trust-sentiment').innerHTML = confidence.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
-                document.getElementById('trust-rsi').innerHTML = confidence.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
-                document.getElementById('trust-news').innerHTML = confidence.trust_conditions.no_major_news_expected_no_volume_spike ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting / No volume spike)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting / Volume spike)';
-                document.getElementById('trust-stable-candles').innerHTML = confidence.trust_conditions.candle_bodies_stable_not_volatile ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-macd-bullish').innerHTML = confidence.trust_conditions.macd_bullish_crossover_confirmed ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-stoch-oversold').innerHTML = confidence.trust_conditions.stoch_oversold_bullish_cross ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-bb-lower').innerHTML = confidence.trust_conditions.price_near_bb_lower_stable_bands ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-no-massive-move').innerHTML = confidence.trust_conditions.no_massive_move_recent ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-bb-stable').innerHTML = confidence.trust_conditions.bb_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-no-volume-spike').innerHTML = confidence.trust_conditions.no_volume_spike_recent ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-currency-name').textContent = selectedCurrency;
+                updateConfidenceSignal('trust-time', confidence.trust_conditions.time_expiry_lt_2hr);
+                updateConfidenceSignal('trust-trend', confidence.trust_conditions.trending_cleanly);
+                updateConfidenceSignal('trust-sentiment', confidence.trust_conditions.sentiment_strong);
+                document.getElementById('trust-sentiment').innerHTML += ` (Score: ${sentiment_score.toFixed(2)})`; // Add score for context
+                updateConfidenceSignal('trust-rsi', confidence.trust_conditions.rsi_neutral);
+                document.getElementById('trust-rsi').innerHTML += ` (RSI: ${market_conditions.rsi !== null ? market_conditions.rsi.toFixed(2) : 'N/A'})`; // Add RSI for context
+                updateConfidenceSignal('trust-news', confidence.trust_conditions.no_major_news_expected);
+                updateConfidenceSignal('trust-stable-candles', confidence.trust_conditions.candle_bodies_stable_not_volatile);
+                updateConfidenceSignal('trust-macd-bullish', confidence.trust_conditions.macd_bullish_crossover_confirmed);
+                updateConfidenceSignal('trust-stoch-oversold', confidence.trust_conditions.stoch_oversold_bullish_cross);
+                updateConfidenceSignal('trust-bb-lower', confidence.trust_conditions.price_near_bb_lower);
+                updateConfidenceSignal('trust-no-massive-move', confidence.trust_conditions.no_massive_move_recent);
+                updateConfidenceSignal('trust-bb-stable', confidence.trust_conditions.bb_stable);
+                updateConfidenceSignal('trust-no-volume-spike', confidence.trust_conditions.no_volume_spike_recent);
+
 
                 // Update Caution Flags
-                document.getElementById('caution-time').innerHTML = confidence.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-massive-move-text').textContent = selectedCurrency;
-                document.getElementById('caution-massive-move').innerHTML = confidence.caution_conditions.btc_massive_move ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-rsi').innerHTML = confidence.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
-                document.getElementById('caution-sentiment').innerHTML = confidence.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
-                document.getElementById('caution-big-news').innerHTML = confidence.caution_conditions.big_news_coming_or_volume_spike ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting / Volume spike)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting / No volume spike)';
-                document.getElementById('caution-volatile-candles').innerHTML = confidence.caution_conditions.candle_volatility_high ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-macd-bearish').innerHTML = confidence.caution_conditions.macd_bearish_crossover_confirmed ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-stoch-overbought').innerHTML = confidence.caution_conditions.stoch_overbought_bearish_cross ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-bb-upper-contracting').innerHTML = confidence.caution_conditions.price_near_bb_upper_or_bb_volatile ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-bb-volatile').innerHTML = confidence.caution_conditions.bb_volatile ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-volume-spike').innerHTML = confidence.caution_conditions.volume_spike_recent ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-currency-name').textContent = selectedCurrency;
+                updateConfidenceSignal('caution-time', confidence.caution_conditions.target_time_gt_3hr);
+                updateConfidenceSignal('caution-massive-move', confidence.caution_conditions.btc_massive_move);
+                updateConfidenceSignal('caution-rsi', confidence.caution_conditions.rsi_extreme);
+                document.getElementById('caution-rsi').innerHTML += ` (RSI: ${market_conditions.rsi !== null ? market_conditions.rsi.toFixed(2) : 'N/A'})`; // Add RSI for context
+                updateConfidenceSignal('caution-sentiment', confidence.caution_conditions.sentiment_conflicting);
+                document.getElementById('caution-sentiment').innerHTML += ` (Score: ${sentiment_score.toFixed(2)})`; // Add score for context
+                updateConfidenceSignal('caution-big-news', confidence.caution_conditions.big_news_coming_or_volume_spike);
+                updateConfidenceSignal('caution-volatile-candles', confidence.caution_conditions.candle_volatility_high);
+                updateConfidenceSignal('caution-macd-bearish', confidence.caution_conditions.macd_bearish_crossover_confirmed);
+                updateConfidenceSignal('caution-stoch-overbought', confidence.caution_conditions.stoch_overbought_bearish_cross);
+                updateConfidenceSignal('caution-bb-upper-contracting', confidence.caution_conditions.price_near_bb_upper_contracting);
+                updateConfidenceSignal('caution-bb-volatile', confidence.caution_conditions.bb_volatile);
+                updateConfidenceSignal('caution-volume-spike', confidence.caution_conditions.volume_spike_recent);
 
 
                 document.getElementById('total-trust-signals').textContent = confidence.trust_signals_count;
@@ -631,11 +632,41 @@
                 } else {
                     proTipClass = 'info-message';
                 }
-                proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong>${adviceMessage}</strong></div>`;
+                proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong class="text-lg">${adviceMessage}</strong><p class="text-sm mt-1">Trust: ${confidence.trust_signals_count}/12, Caution: ${confidence.caution_flags_count}/11</p></div>`;
             } else {
-                // Clear prediction results if no prediction is made
+                // Clear prediction results if no prediction is active
                 document.getElementById('recommended-vote-message').classList.add('hidden');
                 document.getElementById('pro-tip-message').innerHTML = '';
+
+                // Reset confidence advisor status to N/A
+                const trustElements = [
+                    'trust-time', 'trust-trend', 'trust-sentiment', 'trust-rsi', 'trust-news',
+                    'trust-stable-candles', 'trust-macd-bullish', 'trust-stoch-oversold',
+                    'trust-bb-lower', 'trust-no-massive-move', 'trust-bb-stable', 'trust-no-volume-spike'
+                ];
+                const cautionElements = [
+                    'caution-time', 'caution-massive-move', 'caution-rsi', 'caution-sentiment',
+                    'caution-big-news', 'caution-volatile-candles', 'caution-macd-bearish',
+                    'caution-stoch-overbought', 'caution-bb-upper-contracting',
+                    'caution-bb-volatile', 'caution-volume-spike'
+                ];
+                
+                trustElements.forEach(id => {
+                    document.getElementById(id).innerHTML = 'N/A';
+                    const iconElement = document.getElementById(id + '-icon');
+                    if (iconElement) iconElement.innerHTML = '<i class="fas fa-question-circle text-gray-500 mr-2"></i>';
+                });
+                cautionElements.forEach(id => {
+                    document.getElementById(id).innerHTML = 'N/A';
+                    const iconElement = document.getElementById(id + '-icon');
+                    if (iconElement) iconElement.innerHTML = '<i class="fas fa-question-circle text-gray-500 mr-2"></i>';
+                });
+
+                document.getElementById('total-trust-signals').textContent = '0';
+                document.getElementById('total-caution-flags').textContent = '0';
+
+                document.getElementById('trust-currency-name').textContent = selectedCurrency;
+                document.getElementById('caution-currency-name').textContent = selectedCurrency;
             }
         }
 
@@ -1019,8 +1050,8 @@
         document.querySelectorAll('input[name="currency"]').forEach(radio => {
             radio.addEventListener('change', (event) => {
                 selectedCurrency = event.target.value;
-                // Update UI immediately with the newly selected currency's data
-                updateUI(allMarketData[selectedCurrency]);
+                // Update UI immediately with the newly selected currency's data, clearing old prediction results
+                updateUI(allMarketData[selectedCurrency], null); 
             });
         });
 

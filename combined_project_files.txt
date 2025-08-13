@@ -1560,7 +1560,7 @@ if __name__ == "__main__":
         });
 
         // --- Backend API URL ---
-        const BACKEND_API_URL = 'https://html-probo-predictor-website.onrender.com'; // IMPORTANT: Change this for deployment!
+        const BACKEND_API_URL = 'http://localhost:5000'; // IMPORTANT: Change this for deployment!
 
         // Global data storage for both BTC and ETH
         let allMarketData = {
@@ -2530,3 +2530,12 @@ if __name__ == "__main__":
 
 
 --- END FILE: telegram_bot.py ---
+
+--------------------------------------------------------------------------------------------------------------------
+
+do the following : 
+
+remove the telegram bot feature entirely.
+make the predictions more accurate.
+improve the design and ui of the website.
+if a user connects their phone the website will scan their screen for probo real time data and will show its prediction on the mobile screen as a overlay above the probo application opened on phone right above the target deal.(can a feature like this be added to the website?)
