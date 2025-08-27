@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
@@ -14,6 +13,11 @@ from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import EMAIndicator, MACD
 from ta.volatility import BollingerBands
 from prophet import Prophet
+
+# --- Gemini API Integration ---
+import google.generativeai as genai
+from PIL import Image # For image handling
+import io # For file processing
 
 app = Flask(__name__)
 CORS(app)
@@ -34,6 +38,26 @@ eth_market_conditions = {}
 # --- Configuration ---
 BINANCE_BASE_URL = "https://api.binance.com"
 # Telegram Bot Token and User ID are removed as per request.
+
+# Gemini Configuration
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCzx6ReMk8ohPJcCjGwHHzu7SvFccJqAbA") # Your provided key
+genai.configure(api_key=GEMINI_API_KEY)
+# Using gemini-1.5-flash-latest for stability, but user requested "gemini-2.5-flash-preview-05-20"
+# Trying with the user's specified model, if it fails, a more stable one might be needed.
+GEMINI_PREDICTION_MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+GEMINI_CHAT_MODEL_NAME = "gemini-2.5-flash-preview-05-20" # Chat is good with latest flash
+
+# Ensure models are initialized
+try:
+    gemini_prediction_model = genai.GenerativeModel(GEMINI_PREDICTION_MODEL_NAME)
+    gemini_chat_model = genai.GenerativeModel(GEMINI_CHAT_MODEL_NAME)
+    print(f"Gemini Prediction Model '{GEMINI_PREDICTION_MODEL_NAME}' initialized.")
+    print(f"Gemini Chat Model '{GEMINI_CHAT_MODEL_NAME}' initialized.")
+except Exception as e:
+    print(f"Error initializing Gemini models: {e}")
+    print("Please check your API key and model names. Proceeding without Gemini functionality.")
+    gemini_prediction_model = None
+    gemini_chat_model = None
 
 # --- Crypto Data Functions ---
 
@@ -266,8 +290,8 @@ def interpret_market_conditions(df: pd.DataFrame):
     macd_bullish_crossover = bool(macd is not None and macd_signal is not None and macd > macd_signal and macd_hist is not None and macd_hist > 0)
     macd_bearish_crossover = bool(macd is not None and macd_signal is not None and macd < macd_signal and macd_hist is not None and macd_hist < 0)
 
-    stoch_oversold = bool(stoch_k is not None and stoch_d is not None and stoch_k < 20 and stoch_d < 20)
-    stoch_overbought = bool(stoch_k is not None and stoch_d is not None and stoch_k > 80 and stoch_d > 80)
+    stoch_oversold = bool(stoch_k is not None and stoch_d is not None and stoch_k < 20 and stoch_d < 20 and stoch_k > stoch_d) # Added K > D for potential rebound
+    stoch_overbought = bool(stoch_k is not None and stoch_d is not None and stoch_k > 80 and stoch_d > 80 and stoch_k < stoch_d) # Added K < D for potential reversal
 
     # Volatility and Price Action
     massive_move_recent = False
@@ -677,6 +701,191 @@ def predict_outcome():
     except Exception as e:
         print(f"An error occurred during prediction: {e}")
         return jsonify({"error": f"An internal server error occurred during prediction: {e}"}), 500
+
+# --- NEW: Gemini AI Prediction Endpoint ---
+@app.route('/api/gemini_ai_vote', methods=['POST'])
+def gemini_ai_vote():
+    if not gemini_prediction_model:
+        return jsonify({"error": "Gemini prediction model not initialized."}), 500
+
+    data = request.get_json()
+    target_price = data.get('target_price')
+    target_time_str = data.get('target_time') # HH:MM in IST
+    currency = data.get('currency', 'BTC').upper()
+
+    if not target_price or not target_time_str or currency not in ['BTC', 'ETH']:
+        return jsonify({"error": "Missing target_price, target_time, or invalid currency"}), 400
+
+    # Ensure market data is loaded and fresh
+    load_initial_data() 
+
+    df_to_use = None
+    current_price_to_use = 0.0
+    sentiment_to_use = 0.0
+    market_conditions_to_use = {}
+    prophet_projected_price = 0.0
+    prophet_avg_delta = 0.0
+
+    if currency == 'BTC':
+        df_to_use = btc_market_data_df
+        current_price_to_use = btc_current_price
+        sentiment_to_use = btc_sentiment_score
+        market_conditions_to_use = btc_market_conditions
+    elif currency == 'ETH':
+        df_to_use = eth_market_data_df
+        current_price_to_use = eth_current_price
+        sentiment_to_use = eth_sentiment_score
+        market_conditions_to_use = eth_market_conditions
+    
+    if df_to_use is None or df_to_use.empty:
+        return jsonify({"error": f"Market data not available for {currency} AI prediction"}), 500
+
+    try:
+        ist_timezone = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist_timezone)
+        target_time_only = datetime.strptime(target_time_str, "%H:%M").time()
+        target_datetime_ist = now_ist.replace(hour=target_time_only.hour, minute=target_time_only.minute, second=0, microsecond=0)
+
+        if target_datetime_ist < now_ist:
+            target_datetime_ist += timedelta(days=1)
+
+        target_datetime_utc = target_datetime_ist.astimezone(pytz.utc)
+        hours_remaining = (target_datetime_utc - datetime.utcnow().replace(tzinfo=pytz.utc)).total_seconds() / 3600
+        hours_remaining = max(0.25, round(hours_remaining, 2))
+
+        # Get Prophet prediction as part of context for Gemini
+        prophet_projected_price, prophet_avg_delta, _ = predict_future_price(df_to_use, current_price_to_use, hours_remaining)
+
+        # Prepare prompt for Gemini
+        prompt = f"""
+        You are an expert cryptocurrency market analyst and a Probo event predictor. Your task is to analyze the provided market data, technical indicators, and sentiment, then make a highly confident recommendation (YES/NO) for a Probo event based on whether the {currency} price will be AT or ABOVE a target price by a specific target time.
+
+        Here is the current market context for {currency}:
+
+        --- Market Data ---
+        Current Price: ${current_price_to_use:.2f}
+        Time Remaining until Target: {hours_remaining:.2f} hours
+        Target Price for Prediction: ${target_price:.2f}
+        Target Time (IST): {target_time_str}
+        Sentiment Score (from news analysis, -1.0 to 1.0): {sentiment_to_use:.3f}
+
+        --- Technical Indicators (Latest Candle) ---
+        RSI: {market_conditions_to_use.get('rsi', 'N/A'):.2f} (30=oversold, 70=overbought)
+        EMA 20: {market_conditions_to_use.get('ema_20', 'N/A'):.2f}
+        EMA 50: {market_conditions_to_use.get('ema_50', 'N/A'):.2f}
+        MACD: {market_conditions_to_use.get('macd', 'N/A'):.2f}
+        MACD Signal: {market_conditions_to_use.get('macd_signal', 'N/A'):.2f}
+        MACD Histogram: {market_conditions_to_use.get('macd_hist', 'N/A'):.2f} (Positive = bullish momentum, Negative = bearish momentum)
+        Stochastic %K: {market_conditions_to_use.get('stoch_k', 'N/A'):.2f} (20=oversold, 80=overbought)
+        Stochastic %D: {market_conditions_to_use.get('stoch_d', 'N/A'):.2f}
+        Bollinger Bands (Upper/Mid/Lower): {market_conditions_to_use.get('bb_upper', 'N/A'):.2f} / {market_conditions_to_use.get('bb_mid', 'N/A'):.2f} / {market_conditions_to_use.get('bb_lower', 'N/A'):.2f}
+        Bollinger Band Width: {market_conditions_to_use.get('bb_width', 'N/A'):.2f}
+        Bollinger Band %B: {market_conditions_to_use.get('bb_percent', 'N/A'):.2f} (0=lower band, 0.5=mid band, 1=upper band)
+
+        --- Market Conditions / Interpretations ---
+        Bullish Trend (EMA20 > EMA50): {market_conditions_to_use.get('bullish_trend', 'N/A')}
+        RSI Oversold (<30): {market_conditions_to_use.get('oversold', 'N/A')}
+        RSI Overbought (>70): {market_conditions_to_use.get('overbought', 'N/A')}
+        MACD Bullish Crossover (MACD > Signal, Hist > 0): {market_conditions_to_use.get('macd_bullish_crossover', 'N/A')}
+        MACD Bearish Crossover (MACD < Signal, Hist < 0): {market_conditions_to_use.get('macd_bearish_crossover', 'N/A')}
+        Stochastic Oversold (%K/%D < 20 and K > D): {market_conditions_to_use.get('stoch_oversold', 'N/A')}
+        Stochastic Overbought (%K/%D > 80 and K < D): {market_conditions_to_use.get('stoch_overbought', 'N/A')}
+        Price Near BB Lower Band: {market_conditions_to_use.get('price_near_bb_lower', 'N/A')}
+        Price Near BB Upper Band: {market_conditions_to_use.get('price_near_bb_upper', 'N/A')}
+        Bollinger Bands Contracting (getting narrower): {market_conditions_to_use.get('bb_contracting', 'N/A')}
+        Bollinger Bands Expanding (getting wider): {market_conditions_to_use.get('bb_expanding', 'N/A')}
+        Massive Price Move Recently (past 4 hours): {market_conditions_to_use.get('massive_move_recent', 'N/A')}
+        High Candle Volatility (large wicks): {market_conditions_to_use.get('candle_volatility_high', 'N/A')}
+        Stable Candle Bodies (small wicks, decent body): {market_conditions_to_use.get('candle_bodies_stable', 'N/A')}
+        Recent Volume Spike: {market_conditions_to_use.get('volume_spike_recent', 'N/A')}
+
+        --- Prophet Model Projection ---
+        Prophet Projected Price by Target Time: ${prophet_projected_price:.2f}
+        Prophet Average Price Change per Hour: ${prophet_avg_delta:.2f}
+
+        Based on all the above information, including the current price, target price, time remaining, sentiment, all technical indicators, and the interpreted market conditions, should one vote YES or NO on the Probo event?
+
+        Your answer MUST be structured as follows:
+        VOTE: [YES/NO]
+        REASONING: [A concise, yet comprehensive explanation of why you recommend this vote, referencing specific data points and indicators from the provided context. Consider the interplay of trend, momentum, volatility, and sentiment. Also, comment on the Prophet projection and whether your analysis supports or contradicts it.]
+        """
+        # print("Gemini Prompt:\n", prompt) # For debugging
+
+        response = gemini_prediction_model.generate_content(prompt)
+        ai_response_text = response.text.strip()
+        # print("Gemini Raw Response:\n", ai_response_text) # For debugging
+
+        ai_vote = "N/A"
+        ai_reasoning = "Could not parse AI response."
+
+        if ai_response_text.startswith("VOTE:"):
+            lines = ai_response_text.split('\n')
+            for line in lines:
+                if line.startswith("VOTE:"):
+                    ai_vote = line.replace("VOTE:", "").strip()
+                elif line.startswith("REASONING:"):
+                    ai_reasoning = line.replace("REASONING:", "").strip()
+                    # Capture the rest of the lines as well for multi-line reasoning
+                    reasoning_lines = lines[lines.index(line):]
+                    ai_reasoning = "\n".join([l.replace("REASONING:", "").strip() if l.startswith("REASONING:") else l.strip() for l in reasoning_lines])
+                    break # Stop after finding reasoning
+
+        return jsonify({
+            "ai_vote": ai_vote,
+            "ai_reasoning": ai_reasoning,
+            "status": "success"
+        })
+
+    except Exception as e:
+        print(f"Error during Gemini AI prediction: {e}")
+        return jsonify({"error": f"An internal server error occurred during AI prediction: {e}"}), 500
+
+# --- NEW: Gemini AI Chatbot Endpoint ---
+@app.route('/api/ai_chat', methods=['POST'])
+def ai_chat():
+    if not gemini_chat_model:
+        return jsonify({"error": "Gemini chat model not initialized."}), 500
+
+    user_message = request.form.get('message')
+    files = request.files.getlist('files')
+
+    if not user_message and not files:
+        return jsonify({"error": "No message or files provided."}), 400
+
+    content = []
+    if user_message:
+        content.append(user_message)
+
+    for file in files:
+        try:
+            filename = file.filename
+            file_bytes = file.read()
+            mime_type = file.mimetype
+
+            if mime_type.startswith('image/'):
+                img = Image.open(io.BytesIO(file_bytes))
+                content.append(img)
+            elif mime_type == 'text/plain' or 'csv' in mime_type: # Basic text/CSV
+                content.append(f"File '{filename}' content:\n{file_bytes.decode('utf-8')}")
+            else:
+                # Placeholder for other document types
+                content.append(f"Received file '{filename}' ({mime_type}). I can only process text and images directly. For complex formats like PDF, DOCX, XLSX, dedicated libraries would be needed to extract meaningful content.")
+                print(f"Unsupported file type for direct processing: {mime_type} ({filename})")
+                
+        except Exception as e:
+            print(f"Error processing uploaded file {file.filename}: {e}")
+            content.append(f"Error processing file '{file.filename}': {e}")
+    
+    if not content:
+        return jsonify({"error": "No content to send to AI (message or files failed to process)."}), 400
+
+    try:
+        response = gemini_chat_model.generate_content(content)
+        return jsonify({"ai_response": response.text.strip()})
+    except Exception as e:
+        print(f"Error during Gemini AI chat: {e}")
+        return jsonify({"error": f"An internal server error occurred during AI chat: {e}"}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

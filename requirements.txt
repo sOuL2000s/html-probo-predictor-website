@@ -10,3 +10,9 @@ gunicorn
 pytz
 numpy
 prophet
+google-generativeai # For Gemini API
+Pillow # For image processing (though `google-generativeai` might handle basic bytes)
+# If you decide to implement full PDF/DOCX/XLSX parsing, you'll need:
+PyPDF2 # For PDF text extraction
+python-docx # For .docx text extraction
+openpyxl # For .xlsx text extraction

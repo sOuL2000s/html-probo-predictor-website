@@ -47,7 +47,7 @@
         h1, h2, h3, h4 {
             color: #FFD700; /* Gold for headings */
         }
-        input[type="number"], input[type="time"], button, select {
+        input[type="number"], input[type="time"], button, select, textarea {
             background-color: #222222; /* Darker grey for inputs */
             border: 1px solid #444444; /* Darker grey border */
             color: #FFD700; /* Gold text */
@@ -55,7 +55,7 @@
             border-radius: 0.5rem;
             transition: all 0.2s ease-in-out;
         }
-        input[type="number"]:focus, input[type="time"]:focus, button:focus, select:focus {
+        input[type="number"]:focus, input[type="time"]:focus, button:focus, select:focus, textarea:focus {
             outline: none;
             border-color: #FFD700; /* Gold border on focus */
             box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.3); /* Gold shadow on focus */
@@ -177,6 +177,110 @@
         .text-red-400 { color: #F1948A; } /* Adjusted red for better contrast */
         .check-icon { color: #28B463; } /* Stronger green for checkmark */
         .cross-icon { color: #E74C3C; } /* Stronger red for crossmark */
+
+        /* Chatbot specific styles */
+        #chat-window {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            background-color: #222222;
+        }
+        .chat-message {
+            margin-bottom: 0.75rem;
+            display: flex;
+        }
+        .chat-message.user {
+            justify-content: flex-end;
+        }
+        .chat-message.ai {
+            justify-content: flex-start;
+        }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem;
+            line-height: 1.4;
+        }
+        .chat-bubble.user {
+            background-color: #FFD700; /* Gold bubble for user */
+            color: #000000; /* Black text */
+            border-bottom-right-radius: 0;
+        }
+        .chat-bubble.ai {
+            background-color: #333333; /* Darker grey bubble for AI */
+            color: #FFD700; /* Gold text */
+            border-bottom-left-radius: 0;
+        }
+        .chat-file-preview {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 0.5rem;
+            margin-top: 0.5rem;
+            display: block;
+        }
+        .file-upload-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 0.5rem;
+        }
+        .file-upload-list li {
+            background-color: #333;
+            padding: 0.4rem 0.6rem;
+            border-radius: 0.3rem;
+            margin-bottom: 0.3rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file-upload-list li .remove-file {
+            cursor: pointer;
+            color: #F1948A;
+            margin-left: 0.5rem;
+        }
+
+        /* Floating Chatbot styles */
+        #floating-chat-window-content {
+            width: 384px; /* Default Tailwind w-96 */
+            max-height: 80vh; /* Max height for the chatbot window */
+            max-width: calc(100vw - 2rem); /* Max width for mobile screens */
+            transition: all 0.3s ease-in-out;
+        }
+        #chat-toggle-btn {
+            background-color: #FFD700;
+            color: #000000;
+            padding: 1rem;
+            border-radius: 9999px; /* Tailwind 'rounded-full' */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem; /* Tailwind 'text-2xl' */
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+            margin-bottom: 0.5rem; /* Space between button and chat window */
+            min-width: 56px; /* Ensure button is round */
+            min-height: 56px; /* Ensure button is round */
+        }
+        #chat-toggle-btn:hover {
+            background-color: #DAA520;
+        }
+        /* Mobile adjustments for floating chatbot */
+        @media (max-width: 768px) {
+            #floating-chat-window-content {
+                width: calc(100vw - 2rem); /* Full width on smaller screens, with margin */
+                right: 1rem;
+                left: 1rem;
+            }
+            #floating-chatbot-container {
+                right: 0.5rem;
+                left: 0.5rem;
+                bottom: 0.5rem;
+                align-items: center; /* Center the button and window on mobile */
+            }
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -242,7 +346,7 @@
             <!-- Prediction Summary -->
             <div id="prediction-summary-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
-                    <i class="fas fa-chart-pie text-gold-300 mr-2"></i> Prediction Summary
+                    <i class="fas fa-chart-pie text-gold-300 mr-2"></i> Prophet Prediction Summary
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
@@ -257,8 +361,23 @@
                 </div>
             </div>
 
-            <!-- Recommended Vote -->
+            <!-- Recommended Vote (Prophet) -->
             <div id="recommended-vote-message" class="hidden text-center text-xl font-bold py-3 px-4 rounded-lg"></div>
+
+            <!-- NEW: Gemini AI Recommended Vote -->
+            <div id="gemini-ai-vote-expander" class="expander-header rounded-lg bg-gray-900 mt-4">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-robot text-gold-300 mr-2"></i> Gemini AI Recommendation
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="gemini-ai-vote-content" class="expander-content bg-gray-900 rounded-lg">
+                <div class="p-4 space-y-2">
+                    <p class="text-gold-300 text-lg"><strong class="text-gold-100">Gemini AI Vote:</strong> <span id="gemini-ai-vote" class="font-bold">N/A</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Reasoning:</strong> <span id="gemini-ai-reasoning" class="block whitespace-pre-wrap">N/A</span></p>
+                    <div id="gemini-vote-spinner" class="loader hidden mx-auto"></div>
+                </div>
+            </div>
 
             <!-- Prediction Confidence Advisor -->
             <hr class="border-gray-800 my-6">
@@ -368,14 +487,43 @@
         <hr class="border-gray-800 my-6">
 
         <!-- Chart -->
-        <div id="chart-expander" class="expander-header rounded-lg bg-gray-900">
+        <!-- CHART EXPANDER IS NOW OPEN BY DEFAULT -->
+        <div id="chart-expander" class="expander-header rounded-lg bg-gray-900 expanded">
             <span class="text-lg text-gold-100">
                 <i class="fas fa-chart-area text-gold-300 mr-2"></i> View Chart
             </span>
-            <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            <svg class="arrow w-5 h-5 text-gold-300 expanded" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
         </div>
-        <div id="chart-content" class="expander-content bg-gray-900 rounded-lg">
-            <div id="candlestick-chart" class="w-full h-[600px] p-4"></div> <!-- Increased height for multiple subplots -->
+        <div id="chart-content" class="expander-content bg-gray-900 rounded-lg expanded">
+            <div id="candlestick-chart" class="w-full h-[600px] p-4"></div>
+        </div>
+
+        <hr class="border-gray-800 my-6">
+
+        <!-- NEW: Gemini AI Chatbot (Original static section - will be hidden by JS and moved) -->
+        <div id="static-ai-chatbot-section" style="display: none;">
+            <div id="ai-chatbot-expander" class="expander-header rounded-lg bg-gray-900 mt-4">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-comments text-gold-300 mr-2"></i> AI Chatbot
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="ai-chatbot-content" class="expander-content bg-gray-900 rounded-lg">
+                <div id="chat-window" class="mb-4">
+                    <div class="chat-message ai">
+                        <div class="chat-bubble ai">Hello! I'm your Crypto Probo AI assistant. I can help analyze market data, discuss predictions, or analyze files you upload. What's on your mind?</div>
+                    </div>
+                </div>
+                <div class="file-upload-list" id="uploaded-files-preview"></div>
+                <div class="flex flex-col space-y-2">
+                    <input type="file" id="chat-file-input" multiple accept="image/*, text/*, .pdf, .csv, .docx, .xlsx" class="w-full text-gold-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-gold-300 hover:file:bg-gray-600"/>
+                    <textarea id="chat-input" class="w-full rounded-lg px-4 py-2" rows="3" placeholder="Ask me about crypto, market conditions, or upload a file for analysis..."></textarea>
+                    <button id="send-chat-btn" class="w-full py-2 rounded-lg text-black font-semibold">
+                        Send Message <div id="chat-spinner" class="loader hidden"></div>
+                    </button>
+                </div>
+                <div id="chat-error-message" class="error-message hidden"></div>
+            </div>
         </div>
 
         <hr class="border-gray-800 my-6">
@@ -470,7 +618,12 @@
         function setupExpander(headerId, contentId) {
             const header = document.getElementById(headerId);
             const content = document.getElementById(contentId);
-            const arrow = header.querySelector('.arrow');
+            const arrow = header ? header.querySelector('.arrow') : null;
+
+            if (!header || !content || !arrow) { // Robustness check
+                // console.warn(`Expander setup failed for ${headerId}. Element not found.`);
+                return;
+            }
 
             header.addEventListener('click', () => {
                 const isExpanded = content.classList.contains('expanded');
@@ -484,16 +637,8 @@
             });
         }
 
-        // Setup all expanders
-        document.addEventListener('DOMContentLoaded', () => {
-            setupExpander('prediction-summary-expander', 'prediction-summary-content');
-            setupExpander('technical-indicators-expander', 'technical-indicators-content');
-            setupExpander('chart-expander', 'chart-content');
-            setupExpander('trust-signals-expander', 'trust-signals-content');
-            setupExpander('caution-flags-expander', 'caution-flags-content');
-        });
-
         // --- Backend API URL ---
+        // const BACKEND_API_URL = 'http://localhost:5000'; // Use this for local development!
         const BACKEND_API_URL = 'https://html-probo-predictor-website.onrender.com'; // IMPORTANT: Change this for deployment!
 
         // Global data storage for both BTC and ETH
@@ -521,8 +666,10 @@
             }
         }
 
+        // Global variable to keep track of chart instances
+        let plotlyChartInstance = null;
 
-        function updateUI(currencyData, predictionResult = null) {
+        function updateUI(currencyData, predictionResult = null, geminiAiResult = null) {
             const { current_price, sentiment_score, market_conditions, chart_data } = currencyData;
 
             // Update currency symbol display
@@ -538,7 +685,7 @@
             document.getElementById('metric-macd').textContent = market_conditions.macd !== null ? market_conditions.macd.toFixed(2) : 'N/A';
             document.getElementById('metric-stochk').textContent = market_conditions.stoch_k !== null ? market_conditions.stoch_k.toFixed(2) : 'N/A';
             document.getElementById('metric-stochd').textContent = market_conditions.stoch_d !== null ? market_conditions.stoch_d.toFixed(2) : 'N/A';
-            
+
             const bbUpper = market_conditions.bb_upper !== null ? market_conditions.bb_upper.toFixed(2) : 'N/A';
             const bbMid = market_conditions.bb_mid !== null ? market_conditions.bb_mid.toFixed(2) : 'N/A';
             const bbLower = market_conditions.bb_lower !== null ? market_conditions.bb_lower.toFixed(2) : 'N/A';
@@ -562,7 +709,7 @@
             // Update Chart
             drawChart(chart_data);
 
-            // Update Prediction Summary and Confidence Advisor if predictionResult is available
+            // Update Prophet Prediction Summary and Confidence Advisor if predictionResult is available
             if (predictionResult) {
                 document.getElementById('summary-current-price').textContent = `$${predictionResult.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 document.getElementById('summary-avg-delta').textContent = `$${predictionResult.avg_delta_per_hour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -574,15 +721,15 @@
                 const voteMessageDiv = document.getElementById('recommended-vote-message');
                 if (predictionResult.vote === "YES") {
                     voteMessageDiv.className = 'success-message text-center text-xl font-bold py-3 px-4 rounded-lg';
-                    voteMessageDiv.innerHTML = `🧠 Recommended Vote: <strong class="text-green-400">YES</strong>`;
+                    voteMessageDiv.innerHTML = `🧠 Prophet Recommended Vote: <strong class="text-green-400">YES</strong>`;
                 } else {
                     voteMessageDiv.className = 'warning-message text-center text-xl font-bold py-3 px-4 rounded-lg';
-                    voteMessageDiv.innerHTML = `🧠 Recommended Vote: <strong class="text-red-400">NO</strong>`;
+                    voteMessageDiv.innerHTML = `🧠 Prophet Recommended Vote: <strong class="text-red-400">NO</strong>`;
                 }
                 voteMessageDiv.classList.remove('hidden');
 
                 const confidence = predictionResult.confidence_advisor;
-                
+
                 // Update Trust Signals
                 document.getElementById('trust-currency-name').textContent = selectedCurrency;
                 updateConfidenceSignal('trust-time', confidence.trust_conditions.time_expiry_lt_2hr);
@@ -613,7 +760,7 @@
                 updateConfidenceSignal('caution-volatile-candles', confidence.caution_conditions.candle_volatility_high);
                 updateConfidenceSignal('caution-macd-bearish', confidence.caution_conditions.macd_bearish_crossover_confirmed);
                 updateConfidenceSignal('caution-stoch-overbought', confidence.caution_conditions.stoch_overbought_bearish_cross);
-                updateConfidenceSignal('caution-bb-upper-contracting', confidence.caution_conditions.price_near_bb_upper_contracting);
+                updateConfidenceSignal('caution-bb-upper-contracting', confidence.caution_conditions.price_near_bb_upper_or_bb_volatile); // Adjusted to match backend key
                 updateConfidenceSignal('caution-bb-volatile', confidence.caution_conditions.bb_volatile);
                 updateConfidenceSignal('caution-volume-spike', confidence.caution_conditions.volume_spike_recent);
 
@@ -650,14 +797,16 @@
                     'caution-stoch-overbought', 'caution-bb-upper-contracting',
                     'caution-bb-volatile', 'caution-volume-spike'
                 ];
-                
+
                 trustElements.forEach(id => {
-                    document.getElementById(id).innerHTML = 'N/A';
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = 'N/A';
                     const iconElement = document.getElementById(id + '-icon');
                     if (iconElement) iconElement.innerHTML = '<i class="fas fa-question-circle text-gray-500 mr-2"></i>';
                 });
                 cautionElements.forEach(id => {
-                    document.getElementById(id).innerHTML = 'N/A';
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = 'N/A';
                     const iconElement = document.getElementById(id + '-icon');
                     if (iconElement) iconElement.innerHTML = '<i class="fas fa-question-circle text-gray-500 mr-2"></i>';
                 });
@@ -668,6 +817,23 @@
                 document.getElementById('trust-currency-name').textContent = selectedCurrency;
                 document.getElementById('caution-currency-name').textContent = selectedCurrency;
             }
+
+            // Update Gemini AI Vote Section
+            const geminiAiVoteElem = document.getElementById('gemini-ai-vote');
+            const geminiAiReasoningElem = document.getElementById('gemini-ai-reasoning');
+            if (geminiAiResult) {
+                if (geminiAiResult.ai_vote === "YES") {
+                    geminiAiVoteElem.innerHTML = `<strong class="text-green-400">YES</strong>`;
+                } else if (geminiAiResult.ai_vote === "NO") {
+                    geminiAiVoteElem.innerHTML = `<strong class="text-red-400">NO</strong>`;
+                } else {
+                    geminiAiVoteElem.innerHTML = `<strong class="text-gray-400">N/A</strong>`;
+                }
+                geminiAiReasoningElem.textContent = geminiAiResult.ai_reasoning;
+            } else {
+                geminiAiVoteElem.innerHTML = `<strong class="text-gray-400">N/A</strong>`;
+                geminiAiReasoningElem.textContent = 'Awaiting prediction...';
+            }
         }
 
         // --- Charting with Plotly.js ---
@@ -676,6 +842,7 @@
             if (!Array.isArray(chartData) || chartData.length === 0) {
                 console.warn("No chart data available to draw.");
                 Plotly.purge('candlestick-chart');
+                plotlyChartInstance = null; // Clear instance if no data
                 return;
             }
 
@@ -891,7 +1058,8 @@
                     type: 'date',
                     tickfont: { color: '#DAA520' },
                     gridcolor: '#333333',
-                    linecolor: '#444444'
+                    linecolor: '#444444',
+                    range: [0, 100] /* Stochastic is always 0-100 */
                 },
                 yaxis: {
                     title: 'Price (USDT)',
@@ -931,17 +1099,34 @@
                 }
             };
 
-            Plotly.newPlot('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true });
+            if (plotlyChartInstance) {
+                // If chart exists, update it with new data
+                Plotly.react('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true });
+            } else {
+                // Otherwise, create a new chart
+                Plotly.newPlot('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true })
+                    .then(gd => {
+                        plotlyChartInstance = gd; // Store the chart instance
+                    })
+                    .catch(error => {
+                        console.error("Error creating Plotly chart:", error);
+                        Plotly.purge('candlestick-chart');
+                        plotlyChartInstance = null;
+                        document.getElementById('candlestick-chart').innerHTML = '<div class="error-message text-center p-4">❌ Failed to load chart. Check console for details.</div>';
+                    });
+            }
         }
 
         // --- Main Application Logic ---
 
         function showLoading(elementId) {
-            document.getElementById(elementId).classList.remove('hidden');
+            const element = document.getElementById(elementId);
+            if (element) element.classList.remove('hidden');
         }
 
         function hideLoading(elementId) {
-            document.getElementById(elementId).classList.add('hidden');
+            const element = document.getElementById(elementId);
+            if (element) element.classList.add('hidden');
         }
 
         function updateCurrentISTTime() {
@@ -952,16 +1137,22 @@
                 hour12: false,
                 timeZone: 'Asia/Kolkata'
             };
-            document.getElementById('current-ist-time').textContent = now.toLocaleTimeString('en-IN', options);
+            const timeElement = document.getElementById('current-ist-time');
+            if (timeElement) timeElement.textContent = now.toLocaleTimeString('en-IN', options);
         }
 
         async function initializeApp() {
             showLoading('loading-spinner');
-            document.getElementById('current-price-display').textContent = "Loading...";
+            const priceDisplay = document.getElementById('current-price-display');
+            if (priceDisplay) priceDisplay.textContent = "Loading...";
+
             const messageDiv = document.getElementById('recommended-vote-message');
-            messageDiv.innerHTML = '';
-            messageDiv.classList.add('hidden');
-            document.getElementById('pro-tip-message').innerHTML = '';
+            if (messageDiv) {
+                messageDiv.innerHTML = '';
+                messageDiv.classList.add('hidden');
+            }
+            const proTipMessage = document.getElementById('pro-tip-message');
+            if (proTipMessage) proTipMessage.innerHTML = '';
 
             try {
                 const response = await fetch(`${BACKEND_API_URL}/api/market_data`);
@@ -970,16 +1161,18 @@
                     throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || response.statusText}`);
                 }
                 allMarketData = await response.json();
-                
-                // Update UI with data for the currently selected currency
-                updateUI(allMarketData[selectedCurrency]);
+
+                // Update UI with data for the currently selected currency, clear previous predictions
+                updateUI(allMarketData[selectedCurrency], null, null);
 
             } catch (error) {
                 console.error("Error fetching market data:", error);
                 const messageDiv = document.getElementById('recommended-vote-message');
-                messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
-                messageDiv.classList.remove('hidden');
-                document.getElementById('current-price-display').textContent = "$ERROR";
+                if (messageDiv) {
+                    messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
+                    messageDiv.classList.remove('hidden');
+                }
+                if (priceDisplay) priceDisplay.textContent = "$ERROR";
             } finally {
                 hideLoading('loading-spinner');
             }
@@ -990,28 +1183,45 @@
             event.preventDefault();
 
             showLoading('prediction-spinner');
+            showLoading('gemini-vote-spinner');
+            const geminiAiVoteElem = document.getElementById('gemini-ai-vote');
+            const geminiAiReasoningElem = document.getElementById('gemini-ai-reasoning');
+            if(geminiAiVoteElem) geminiAiVoteElem.innerHTML = 'Loading...';
+            if(geminiAiReasoningElem) geminiAiReasoningElem.textContent = 'Generating AI analysis...';
+
             const targetPrice = parseFloat(document.getElementById('target-price').value);
             const targetTimeStr = document.getElementById('target-time').value;
             const selectedCurrencyForPrediction = document.querySelector('input[name="currency"]:checked').value;
 
             const messageDiv = document.getElementById('recommended-vote-message');
-            messageDiv.innerHTML = '';
-            messageDiv.classList.add('hidden');
-            document.getElementById('pro-tip-message').innerHTML = '';
+            if (messageDiv) {
+                messageDiv.innerHTML = '';
+                messageDiv.classList.add('hidden');
+            }
+            const proTipMessage = document.getElementById('pro-tip-message');
+            if (proTipMessage) proTipMessage.innerHTML = '';
+
 
             if (isNaN(targetPrice) || !targetTimeStr) {
-                messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
-                messageDiv.classList.remove('hidden');
+                if (messageDiv) {
+                    messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
+                    messageDiv.classList.remove('hidden');
+                }
                 hideLoading('prediction-spinner');
+                hideLoading('gemini-vote-spinner');
+                if(geminiAiVoteElem) geminiAiVoteElem.innerHTML = 'N/A';
+                if(geminiAiReasoningElem) geminiAiReasoningElem.textContent = 'Invalid input for prediction.';
                 return;
             }
 
+            let prophetPredictionResult = null;
+            let geminiAiPredictionResult = null;
+
             try {
-                const response = await fetch(`${BACKEND_API_URL}/api/predict`, {
+                // 1. Get Prophet Prediction
+                const prophetResponse = await fetch(`${BACKEND_API_URL}/api/predict`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         target_price: targetPrice,
                         target_time: targetTimeStr,
@@ -1019,30 +1229,52 @@
                     })
                 });
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(`Prediction failed: ${errorData.error || response.statusText}`);
+                if (!prophetResponse.ok) {
+                    const errorData = await prophetResponse.json();
+                    throw new Error(`Prophet prediction failed: ${errorData.error || prophetResponse.statusText}`);
                 }
+                prophetPredictionResult = await prophetResponse.json();
 
-                const predictionResult = await response.json();
-                
-                // Re-fetch all market data to ensure the UI is consistent with the latest backend state
+                // 2. Get Gemini AI Prediction
+                const geminiAiResponse = await fetch(`${BACKEND_API_URL}/api/gemini_ai_vote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_price: targetPrice,
+                        target_time: targetTimeStr,
+                        currency: selectedCurrencyForPrediction
+                    })
+                });
+
+                if (!geminiAiResponse.ok) {
+                    const errorData = await geminiAiResponse.json();
+                    throw new Error(`Gemini AI prediction failed: ${errorData.error || geminiAiResponse.statusText}`);
+                }
+                geminiAiPredictionResult = await geminiAiResponse.json();
+
+
+                // 3. Re-fetch all market data to ensure the UI is consistent with the latest backend state
                 const marketDataResponse = await fetch(`${BACKEND_API_URL}/api/market_data`);
                 if (!marketDataResponse.ok) {
                     const errorData = await marketDataResponse.json();
                     throw new Error(`Failed to refresh market data after prediction: ${errorData.error || marketDataResponse.statusText}`);
                 }
                 allMarketData = await marketDataResponse.json();
-                
-                // Update UI with the prediction result for the *selected* currency
-                updateUI(allMarketData[selectedCurrency], predictionResult);
+
+                // Update UI with both prediction results for the *selected* currency
+                updateUI(allMarketData[selectedCurrency], prophetPredictionResult, geminiAiPredictionResult);
 
             } catch (error) {
                 console.error("Error during prediction:", error);
-                messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
-                messageDiv.classList.remove('hidden');
+                if (messageDiv) {
+                    messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
+                    messageDiv.classList.remove('hidden');
+                }
+                if(geminiAiVoteElem) geminiAiVoteElem.innerHTML = 'ERROR';
+                if(geminiAiReasoningElem) geminiAiReasoningElem.textContent = `Failed to get AI prediction: ${error.message}`;
             } finally {
                 hideLoading('prediction-spinner');
+                hideLoading('gemini-vote-spinner');
             }
         });
 
@@ -1051,20 +1283,266 @@
             radio.addEventListener('change', (event) => {
                 selectedCurrency = event.target.value;
                 // Update UI immediately with the newly selected currency's data, clearing old prediction results
-                updateUI(allMarketData[selectedCurrency], null); 
+                updateUI(allMarketData[selectedCurrency], null, null);
             });
         });
+
+        // --- Chart resize on expand handler (NEW) ---
+        function setupExpanderWithPlotly(headerId, contentId, plotlyDivId) {
+            const header = document.getElementById(headerId);
+            const content = document.getElementById(contentId);
+            const arrow = header ? header.querySelector('.arrow') : null;
+
+            if (!header || !content || !arrow) return;
+
+            header.addEventListener('click', () => {
+                content.classList.toggle('expanded');
+                arrow.classList.toggle('expanded');
+                // If content is now expanded, trigger Plotly resize
+                if (content.classList.contains('expanded') && plotlyChartInstance && plotlyDivId) {
+                    setTimeout(() => Plotly.relayout(plotlyDivId, {autosize: true}), 500); // Allow animation to finish
+                }
+            });
+        }
+
+        // --- Chatbot Logic ---
+        const chatWindow = document.getElementById('chat-window'); // This is inside the potentially floating div
+        const chatInput = document.getElementById('chat-input');
+        const sendChatBtn = document.getElementById('send-chat-btn');
+        const chatSpinner = document.getElementById('chat-spinner');
+        const chatFileInput = document.getElementById('chat-file-input');
+        const uploadedFilesPreview = document.getElementById('uploaded-files-preview');
+        const chatErrorMessage = document.getElementById('chat-error-message');
+
+        let attachedFiles = [];
+
+        function addMessageToChat(sender, message, files = []) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('chat-message', sender);
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('chat-bubble', sender);
+            bubble.textContent = message;
+            messageDiv.appendChild(bubble);
+
+            files.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.classList.add('chat-file-preview');
+                    messageDiv.appendChild(img);
+                } else {
+                    const fileText = document.createElement('p');
+                    fileText.classList.add('text-sm', 'text-gray-400', 'mt-1');
+                    fileText.textContent = `Attached: ${file.name}`;
+                    messageDiv.appendChild(fileText);
+                }
+            });
+
+            chatWindow.appendChild(messageDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight; // Auto-scroll to bottom
+        }
+
+        async function sendChatMessage() {
+            const message = chatInput.value.trim();
+            chatErrorMessage.classList.add('hidden');
+
+            if (!message && attachedFiles.length === 0) {
+                chatErrorMessage.textContent = 'Please enter a message or select a file.';
+                chatErrorMessage.classList.remove('hidden');
+                return;
+            }
+
+            addMessageToChat('user', message, attachedFiles);
+            chatInput.value = ''; // Clear input
+            uploadedFilesPreview.innerHTML = ''; // Clear file previews
+
+            showLoading('chat-spinner');
+
+            try {
+                const formData = new FormData();
+                if (message) {
+                    formData.append('message', message);
+                }
+                attachedFiles.forEach((file) => {
+                    formData.append('files', file);
+                });
+
+                const response = await fetch(`${BACKEND_API_URL}/api/ai_chat`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Chatbot error: ${errorData.error || response.statusText}`);
+                }
+
+                const result = await response.json();
+                addMessageToChat('ai', result.ai_response);
+
+            } catch (error) {
+                console.error("Error sending chat message:", error);
+                chatErrorMessage.textContent = `❌ ${error.message}`;
+                chatErrorMessage.classList.remove('hidden');
+                addMessageToChat('ai', `Sorry, I encountered an error: ${error.message}`);
+            } finally {
+                hideLoading('chat-spinner');
+                attachedFiles = []; // Reset attached files after sending
+                chatFileInput.value = ''; // Clear file input element itself
+            }
+        }
+
+        sendChatBtn.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Prevent new line in textarea
+                sendChatMessage();
+            }
+        });
+
+        chatFileInput.addEventListener('change', (event) => {
+            uploadedFilesPreview.innerHTML = ''; // Clear previous previews
+            attachedFiles = Array.from(event.target.files);
+
+            attachedFiles.forEach((file, index) => {
+                const listItem = document.createElement('li');
+                listItem.classList.add('flex', 'justify-between', 'items-center', 'text-gold-300');
+                listItem.innerHTML = `
+                    <span><i class="fas fa-file mr-2"></i>${file.name}</span>
+                    <i class="fas fa-times-circle remove-file cursor-pointer" data-index="${index}"></i>
+                `;
+                uploadedFilesPreview.appendChild(listItem);
+            });
+
+            // Add event listeners for removing files
+            uploadedFilesPreview.querySelectorAll('.remove-file').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const indexToRemove = parseInt(e.target.dataset.index);
+                    attachedFiles.splice(indexToRemove, 1); // Remove from array
+                    e.target.closest('li').remove(); // Remove from UI
+                    // If no files are left, clear the actual file input element
+                    if (attachedFiles.length === 0) {
+                        chatFileInput.value = '';
+                    } else {
+                        // Re-render the list to update indices
+                        const tempFiles = Array.from(attachedFiles); // Copy to re-render
+                        attachedFiles = []; // Clear for re-population
+                        chatFileInput.files = null; // Clear native input
+                        // Manually trigger the change event with new files (tricky for FileList)
+                        // A simpler approach is just to update the preview list.
+                        const dataTransfer = new DataTransfer();
+                        tempFiles.forEach(file => dataTransfer.items.add(file));
+                        chatFileInput.files = dataTransfer.files;
+                        chatFileInput.dispatchEvent(new Event('change')); // Trigger re-render of preview
+                    }
+                });
+            });
+        });
+
 
         // Initialize the app when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', () => {
             initializeApp();
             updateCurrentISTTime(); // Set initial time
             setInterval(updateCurrentISTTime, 1000); // Update time every second
+
+            // Setup all expanders. Chart expander now explicitly handles Plotly resize.
+            setupExpander('prediction-summary-expander', 'prediction-summary-content');
+            setupExpander('technical-indicators-expander', 'technical-indicators-content');
+            setupExpanderWithPlotly('chart-expander', 'chart-content', 'candlestick-chart'); // Specific setup for chart
+            setupExpander('trust-signals-expander', 'trust-signals-content');
+            setupExpander('caution-flags-expander', 'caution-flags-content');
+            setupExpander('gemini-ai-vote-expander', 'gemini-ai-vote-content');
+
+            // Initialize chart on page load (it's expanded by default now)
+            // This call will be redundant after initialApp() is done, but safe.
+            // The actual data will be loaded by initializeApp.
+            // drawChart(allMarketData[selectedCurrency].chart_data); // Removed - initializeApp handles this now.
         });
 
         // Periodically update market data (e.g., every 1 minute for a more "real-time" feel)
         setInterval(initializeApp, 60000); // 60000 ms = 1 minute
 
+        // --- Floating Chatbot UI/Logic (NEW) ---
+        const floatingChatbotContainer = document.createElement('div');
+        floatingChatbotContainer.id = 'floating-chatbot-container';
+        floatingChatbotContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col items-end';
+        document.body.appendChild(floatingChatbotContainer);
+
+        const chatToggleBtn = document.createElement('button');
+        chatToggleBtn.id = 'chat-toggle-btn';
+        chatToggleBtn.innerHTML = '<i class="fas fa-comment"></i>'; // Initial icon
+        floatingChatbotContainer.appendChild(chatToggleBtn);
+
+        // Get the static chatbot section, then move its content
+        const staticChatbotSection = document.getElementById('static-ai-chatbot-section');
+        const chatbotContentMoved = staticChatbotSection.querySelector('#ai-chatbot-content');
+        const chatbotHeaderMoved = staticChatbotSection.querySelector('#ai-chatbot-expander');
+
+        // Hide the original static chatbot section from the main document flow
+        staticChatbotSection.style.display = 'none';
+
+        // Create a new container for the actual chatbot window that will be toggled
+        const floatingChatWindow = document.createElement('div');
+        floatingChatWindow.id = 'floating-chat-window-content';
+        floatingChatWindow.className = 'w-96 bg-gray-900 rounded-lg shadow-xl overflow-hidden transform scale-0 origin-bottom-right transition-all duration-300 ease-in-out hidden'; // Initially hidden and scaled down
+
+        floatingChatWindow.appendChild(chatbotHeaderMoved); // Move header to floating
+        floatingChatWindow.appendChild(chatbotContentMoved); // Move content to floating
+        floatingChatbotContainer.appendChild(floatingChatWindow);
+
+        let isChatOpen = false;
+
+        chatToggleBtn.addEventListener('click', () => {
+            isChatOpen = !isChatOpen;
+            if (isChatOpen) {
+                floatingChatWindow.classList.remove('hidden');
+                floatingChatWindow.classList.remove('scale-0');
+                floatingChatWindow.classList.add('scale-100');
+                chatToggleBtn.innerHTML = '<i class="fas fa-times"></i>'; // Change icon to 'X'
+                // Expand the content inside the floating window if it's not already
+                if (!chatbotContentMoved.classList.contains('expanded')) {
+                    chatbotContentMoved.classList.add('expanded');
+                    chatbotHeaderMoved.querySelector('.arrow').classList.add('expanded');
+                }
+                if (chatWindow) chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom on open
+            } else {
+                floatingChatWindow.classList.remove('scale-100');
+                floatingChatWindow.classList.add('scale-0');
+                // Use a transitionend event to hide the element completely after the animation
+                floatingChatWindow.addEventListener('transitionend', function handler() {
+                    if (!isChatOpen) { // Only hide after transition if still closed
+                        floatingChatWindow.classList.add('hidden');
+                    }
+                    floatingChatWindow.removeEventListener('transitionend', handler);
+                });
+                chatToggleBtn.innerHTML = '<i class="fas fa-comment"></i>'; // Change icon back to comment
+            }
+        });
+
+        // Re-setup the chatbot content as an expander *within* the floating window
+        // but ensure it's initially expanded when the floating window is shown.
+        document.addEventListener('DOMContentLoaded', () => {
+            const floatingChatbotContent = document.getElementById('ai-chatbot-content');
+            const floatingChatbotHeader = document.getElementById('ai-chatbot-expander');
+            const floatingChatbotArrow = floatingChatbotHeader ? floatingChatbotHeader.querySelector('.arrow') : null;
+
+            if (floatingChatbotContent && floatingChatbotHeader && floatingChatbotArrow) {
+                // The floating window itself will control visibility, so we ensure the internal content is always expanded
+                floatingChatbotContent.classList.add('expanded');
+                floatingChatbotArrow.classList.add('expanded'); // Make arrow point up by default for the internal content
+
+                // Keep the internal expander functionality, but it will control internal scroll height, not main window visibility.
+                floatingChatbotHeader.addEventListener('click', () => {
+                    floatingChatbotContent.classList.toggle('expanded');
+                    floatingChatbotArrow.classList.toggle('expanded');
+                    if (floatingChatbotContent.classList.contains('expanded') && chatWindow) {
+                        chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom when content expands
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>

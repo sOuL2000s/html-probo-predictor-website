@@ -1,7 +1,26 @@
 
+--- START FILE: .gitignore ---
+
+# Python
+*.pyc
+__pycache__/
+venv/
+.env
+
+# MacOS
+.DS_Store
+
+# IDEs (add as needed)
+.vscode/
+.idea/
+
+# Plotly temp files
+plotly_images/
+
+--- END FILE: .gitignore ---
+
 --- START FILE: backend_app.py ---
 
-# app.py
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
@@ -17,6 +36,11 @@ from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.trend import EMAIndicator, MACD
 from ta.volatility import BollingerBands
 from prophet import Prophet
+
+# --- Gemini API Integration ---
+import google.generativeai as genai
+from PIL import Image # For image handling
+import io # For file processing
 
 app = Flask(__name__)
 CORS(app)
@@ -36,12 +60,31 @@ eth_market_conditions = {}
 
 # --- Configuration ---
 BINANCE_BASE_URL = "https://api.binance.com"
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_FALLBACK_TELEGRAM_BOT_TOKEN")
-TELEGRAM_USER_ID = os.environ.get("TELEGRAM_USER_ID", 5368095453)
+# Telegram Bot Token and User ID are removed as per request.
+
+# Gemini Configuration
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyCzx6ReMk8ohPJcCjGwHHzu7SvFccJqAbA") # Your provided key
+genai.configure(api_key=GEMINI_API_KEY)
+# Using gemini-1.5-flash-latest for stability, but user requested "gemini-2.5-flash-preview-05-20"
+# Trying with the user's specified model, if it fails, a more stable one might be needed.
+GEMINI_PREDICTION_MODEL_NAME = "gemini-2.5-flash-preview-05-20"
+GEMINI_CHAT_MODEL_NAME = "gemini-2.5-flash-preview-05-20" # Chat is good with latest flash
+
+# Ensure models are initialized
+try:
+    gemini_prediction_model = genai.GenerativeModel(GEMINI_PREDICTION_MODEL_NAME)
+    gemini_chat_model = genai.GenerativeModel(GEMINI_CHAT_MODEL_NAME)
+    print(f"Gemini Prediction Model '{GEMINI_PREDICTION_MODEL_NAME}' initialized.")
+    print(f"Gemini Chat Model '{GEMINI_CHAT_MODEL_NAME}' initialized.")
+except Exception as e:
+    print(f"Error initializing Gemini models: {e}")
+    print("Please check your API key and model names. Proceeding without Gemini functionality.")
+    gemini_prediction_model = None
+    gemini_chat_model = None
 
 # --- Crypto Data Functions ---
 
-def fetch_ohlcv(symbol="BTCUSDT", interval="1h", limit=150): # Increased limit for better indicator calculation
+def fetch_ohlcv(symbol="BTCUSDT", interval="1h", limit=200): # Increased limit for better indicator calculation
     """
     Fetches OHLCV (Open, High, Low, Close, Volume) data from Binance for a given symbol.
     """
@@ -119,7 +162,7 @@ def add_technical_indicators(df):
         df["EMA_50"] = float('nan')
 
     # Calculate MACD
-    if len(df) >= 26: # MACD needs at least 26 periods for EMA calculation
+    if len(df) >= 34: # MACD needs 12 (fast EMA) + 26 (slow EMA) periods to stabilize, 34 is safer.
         macd_indicator = MACD(df["close"])
         df["MACD"] = macd_indicator.macd()
         df["MACD_Signal"] = macd_indicator.macd_signal()
@@ -185,7 +228,7 @@ def get_current_price(symbol="BTCUSDT"):
         print(f"An unexpected error occurred in get_current_price for {symbol}: {e}")
         return 0.0
 
-# --- Sentiment Functions ---
+# --- Sentiment Functions (consolidated) ---
 
 def fetch_news_sentiment(query="bitcoin", max_items=20):
     """
@@ -215,7 +258,7 @@ def get_crypto_sentiment(crypto_name="bitcoin"):
     """
     return fetch_news_sentiment(f"{crypto_name} OR {crypto_name[:3].upper()}")
 
-# --- Probo Strategy Functions ---
+# --- Market Interpretation (consolidated and enhanced) ---
 
 def interpret_market_conditions(df: pd.DataFrame):
     """
@@ -229,19 +272,17 @@ def interpret_market_conditions(df: pd.DataFrame):
     ]
     if df.empty or not all(col in df.columns for col in required_cols):
         print("Warning: DataFrame is empty or missing required columns for market interpretation. Returning default conditions.")
-        return {
-            "bullish_trend": False, "oversold": False, "overbought": False,
-            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-            "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-            "stoch_k": 50.0, "stoch_d": 50.0,
-            "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-            "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-            "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-            "stoch_oversold": False, "stoch_overbought": False,
-            "price_near_bb_lower": False, "price_near_bb_upper": False,
-            "bb_contracting": False, "bb_expanding": False, # New BB states
-            "volume_spike_recent": False # New volume analysis
-        }
+        # Initialize with None to correctly reflect missing data, rather than default values
+        return {k: None for k in [
+            "bullish_trend", "oversold", "overbought", "rsi", "ema_20", "ema_50",
+            "macd", "macd_signal", "macd_hist", "stoch_k", "stoch_d",
+            "bb_upper", "bb_lower", "bb_mid", "bb_width", "bb_percent",
+            "massive_move_recent", "candle_volatility_high", "candle_bodies_stable",
+            "macd_bullish_crossover", "macd_bearish_crossover",
+            "stoch_oversold", "stoch_overbought",
+            "price_near_bb_lower", "price_near_bb_upper",
+            "bb_contracting", "bb_expanding", "volume_spike_recent"
+        ]}
 
     latest = df.iloc[-1]
 
@@ -269,11 +310,11 @@ def interpret_market_conditions(df: pd.DataFrame):
     rsi_oversold = bool(rsi is not None and rsi < 30)
     rsi_overbought = bool(rsi is not None and rsi > 70)
     
-    macd_bullish_crossover = bool(macd is not None and macd_signal is not None and macd > macd_signal and macd_hist > 0)
-    macd_bearish_crossover = bool(macd is not None and macd_signal is not None and macd < macd_signal and macd_hist < 0)
+    macd_bullish_crossover = bool(macd is not None and macd_signal is not None and macd > macd_signal and macd_hist is not None and macd_hist > 0)
+    macd_bearish_crossover = bool(macd is not None and macd_signal is not None and macd < macd_signal and macd_hist is not None and macd_hist < 0)
 
-    stoch_oversold = bool(stoch_k is not None and stoch_d is not None and stoch_k < 20 and stoch_d < 20)
-    stoch_overbought = bool(stoch_k is not None and stoch_d is not None and stoch_k > 80 and stoch_d > 80)
+    stoch_oversold = bool(stoch_k is not None and stoch_d is not None and stoch_k < 20 and stoch_d < 20 and stoch_k > stoch_d) # Added K > D for potential rebound
+    stoch_overbought = bool(stoch_k is not None and stoch_d is not None and stoch_k > 80 and stoch_d > 80 and stoch_k < stoch_d) # Added K < D for potential reversal
 
     # Volatility and Price Action
     massive_move_recent = False
@@ -281,7 +322,7 @@ def interpret_market_conditions(df: pd.DataFrame):
         past_close = df['close'].iloc[-4] if len(df) >= 4 else df['close'].iloc[0]
         if pd.notna(past_close) and past_close != 0:
             percent_change = abs((latest_close - past_close) / past_close) * 100
-            if percent_change > 2.0:
+            if percent_change > 2.0: # Define "massive" as > 2% move in 4 hours
                 massive_move_recent = True
 
     candle_volatility_high = False
@@ -291,7 +332,7 @@ def interpret_market_conditions(df: pd.DataFrame):
             candle_volatility_high = True
         if latest_wick_to_body_ratio < 0.5 and (latest_body_size / latest_close) * 100 > 0.1:
             candle_bodies_stable = True
-    if candle_volatility_high:
+    if candle_volatility_high: # If high volatility, bodies are NOT stable.
         candle_bodies_stable = False
 
     # Bollinger Band interpretations
@@ -301,8 +342,6 @@ def interpret_market_conditions(df: pd.DataFrame):
     bb_contracting = False
     bb_expanding = False
     if len(df) >= 20 and bb_width is not None:
-        # Check if current BB width is significantly smaller/larger than average of last few widths
-        # Use a rolling average of BB_Width to detect contraction/expansion
         rolling_bb_width_avg = df['BB_Width'].iloc[-20:].mean() # Average of last 20 widths
         if rolling_bb_width_avg is not None and rolling_bb_width_avg > 0:
             if bb_width < rolling_bb_width_avg * 0.9: # 10% narrower than recent average
@@ -317,7 +356,6 @@ def interpret_market_conditions(df: pd.DataFrame):
         if avg_volume_past is not None and avg_volume_past > 0:
             if latest_volume > avg_volume_past * 1.5: # Current volume is 50% higher than recent average
                 volume_spike_recent = True
-
 
     return {
         "bullish_trend": bullish_trend,
@@ -350,7 +388,7 @@ def interpret_market_conditions(df: pd.DataFrame):
         "volume_spike_recent": volume_spike_recent
     }
 
-# --- Predictor Functions ---
+# --- Predictor Functions (consolidated and enhanced) ---
 
 def predict_future_price(df: pd.DataFrame, current_price: float, hours_ahead: float = 1):
     """
@@ -371,9 +409,9 @@ def predict_future_price(df: pd.DataFrame, current_price: float, hours_ahead: fl
     # Initialize and fit Prophet model with adjusted parameters
     model = Prophet(
         daily_seasonality=True,
-        weekly_seasonality=False,
+        weekly_seasonality=False, # Crypto often doesn't have strong weekly seasonality on 1hr
         yearly_seasonality=False,
-        changepoint_prior_scale=0.08 # Increased flexibility for trend changes
+        changepoint_prior_scale=0.1 # Increased flexibility for trend changes
     )
     try:
         model.fit(prophet_df)
@@ -411,7 +449,7 @@ def recommend_probo_vote_for_target(df: pd.DataFrame, current_price: float, sent
     sentiment = sentiment_score
     projected, delta, current = predict_future_price(df, current_price, hours_remaining)
 
-    if projected >= target_price and sentiment >= -0.1:
+    if projected >= target_price and sentiment >= -0.1: # Sentiment not strongly negative
         vote = "YES"
     else:
         vote = "NO"
@@ -428,44 +466,25 @@ def recommend_probo_vote_for_target(df: pd.DataFrame, current_price: float, sent
     }
     return result
 
-# --- Telegram Bot Functions ---
-
-def send_telegram_alert(message):
-    """
-    Sends a Markdown-formatted message as an alert to a specified Telegram user.
-    """
-    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_FALLBACK_TELEGRAM_BOT_TOKEN":
-        print("❌ Telegram BOT_TOKEN not configured. Alert not sent. Please set the TELEGRAM_BOT_TOKEN environment variable.")
-        return
-    
-    if not TELEGRAM_USER_ID:
-        print("❌ Telegram USER_ID not configured. Alert not sent. Please set the TELEGRAM_USER_ID environment variable.")
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_USER_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-        if response.status_code == 200:
-            print("✅ Telegram alert sent successfully.")
-        else:
-            print(f"❌ Failed to send alert (status code: {response.status_code}): {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Telegram alert error (network/request issue): {str(e)}")
-    except Exception as e:
-        print(f"❌ An unexpected error occurred while sending Telegram alert: {str(e)}")
-
 # --- Flask App Endpoints ---
 
 def load_initial_data():
     """Fetches and processes initial market data and sentiment for both BTC and ETH."""
     global btc_market_data_df, btc_current_price, btc_sentiment_score, btc_market_conditions
     global eth_market_data_df, eth_current_price, eth_sentiment_score, eth_market_conditions
+
+    # Helper function to create default market conditions
+    def get_default_market_conditions():
+        return {k: None for k in [
+            "bullish_trend", "oversold", "overbought", "rsi", "ema_20", "ema_50",
+            "macd", "macd_signal", "macd_hist", "stoch_k", "stoch_d",
+            "bb_upper", "bb_lower", "bb_mid", "bb_width", "bb_percent",
+            "massive_move_recent", "candle_volatility_high", "candle_bodies_stable",
+            "macd_bullish_crossover", "macd_bearish_crossover",
+            "stoch_oversold", "stoch_overbought",
+            "price_near_bb_lower", "price_near_bb_upper",
+            "bb_contracting", "bb_expanding", "volume_spike_recent"
+        ]}
 
     # --- Load BTC Data ---
     try:
@@ -476,19 +495,7 @@ def load_initial_data():
             btc_market_data_df = pd.DataFrame()
             btc_current_price = 0.0
             btc_sentiment_score = 0.0
-            btc_market_conditions = {
-                "bullish_trend": False, "oversold": False, "overbought": False,
-                "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-                "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-                "stoch_k": 50.0, "stoch_d": 50.0,
-                "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-                "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-                "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-                "stoch_oversold": False, "stoch_overbought": False,
-                "price_near_bb_lower": False, "price_near_bb_upper": False,
-                "bb_contracting": False, "bb_expanding": False,
-                "volume_spike_recent": False
-            }
+            btc_market_conditions = get_default_market_conditions()
         else:
             print("Adding technical indicators for BTC...")
             df_btc = add_technical_indicators(df_btc)
@@ -508,19 +515,7 @@ def load_initial_data():
         btc_market_data_df = pd.DataFrame()
         btc_current_price = 0.0
         btc_sentiment_score = 0.0
-        btc_market_conditions = {
-            "bullish_trend": False, "oversold": False, "overbought": False,
-            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-            "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-            "stoch_k": 50.0, "stoch_d": 50.0,
-            "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-            "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-            "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-            "stoch_oversold": False, "stoch_overbought": False,
-            "price_near_bb_lower": False, "price_near_bb_upper": False,
-            "bb_contracting": False, "bb_expanding": False,
-            "volume_spike_recent": False
-        }
+        btc_market_conditions = get_default_market_conditions()
 
     # --- Load ETH Data ---
     try:
@@ -531,19 +526,7 @@ def load_initial_data():
             eth_market_data_df = pd.DataFrame()
             eth_current_price = 0.0
             eth_sentiment_score = 0.0
-            eth_market_conditions = {
-                "bullish_trend": False, "oversold": False, "overbought": False,
-                "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-                "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-                "stoch_k": 50.0, "stoch_d": 50.0,
-                "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-                "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-                "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-                "stoch_oversold": False, "stoch_overbought": False,
-                "price_near_bb_lower": False, "price_near_bb_upper": False,
-                "bb_contracting": False, "bb_expanding": False,
-                "volume_spike_recent": False
-            }
+            eth_market_conditions = get_default_market_conditions()
         else:
             print("Adding technical indicators for ETH...")
             df_eth = add_technical_indicators(df_eth)
@@ -563,19 +546,7 @@ def load_initial_data():
         eth_market_data_df = pd.DataFrame()
         eth_current_price = 0.0
         eth_sentiment_score = 0.0
-        eth_market_conditions = {
-            "bullish_trend": False, "oversold": False, "overbought": False,
-            "rsi": 50.0, "ema_20": 0.0, "ema_50": 0.0,
-            "macd": 0.0, "macd_signal": 0.0, "macd_hist": 0.0,
-            "stoch_k": 50.0, "stoch_d": 50.0,
-            "bb_upper": 0.0, "bb_lower": 0.0, "bb_mid": 0.0, "bb_width": 0.0, "bb_percent": 0.0,
-            "massive_move_recent": False, "candle_volatility_high": False, "candle_bodies_stable": False,
-            "macd_bullish_crossover": False, "macd_bearish_crossover": False,
-            "stoch_oversold": False, "stoch_overbought": False,
-            "price_near_bb_lower": False, "price_near_bb_upper": False,
-            "bb_contracting": False, "bb_expanding": False,
-            "volume_spike_recent": False
-        }
+        eth_market_conditions = get_default_market_conditions()
 
 # Load data when the Flask app starts
 with app.app_context():
@@ -633,7 +604,7 @@ def get_market_data():
 
 @app.route('/api/predict', methods=['POST'])
 def predict_outcome():
-    """Performs prediction for the selected cryptocurrency and sends a Telegram alert."""
+    """Performs prediction for the selected cryptocurrency."""
     data = request.get_json()
     target_price = data.get('target_price')
     target_time_str = data.get('target_time') # HH:MM in IST
@@ -646,7 +617,7 @@ def predict_outcome():
 
     df_to_use = None
     current_price_to_use = 0.0
-    sentiment_to_use = 0.0
+    sentiment_to_use = 0.0 # This variable holds the sentiment score from the global store
     market_conditions_to_use = {}
     crypto_name_full = ""
 
@@ -682,107 +653,71 @@ def predict_outcome():
         result = recommend_probo_vote_for_target(
             df=df_to_use,
             current_price=current_price_to_use,
-            sentiment_score=sentiment_to_use,
+            sentiment_score=sentiment_to_use, # Pass this sentiment to the prediction function
             target_price=target_price,
-            target_time_str=target_datetime_utc.strftime("%H:%M")
+            target_time_str=target_datetime_utc.strftime("%H:%M") 
         )
         result['hours_remaining'] = hours_remaining
-        result['target_time'] = target_time_str # Keep original IST string for frontend display
+        result['target_time_ist'] = target_time_str # Keep original IST string for frontend display
         result['currency'] = currency # Add currency to result
 
-        trust_signals = 0
-        caution_flags = 0
+        # Define sentiment_for_advisor here, *after* result is populated
+        # This sentiment_for_advisor will be the (potentially rounded) sentiment from the prediction logic's result
+        sentiment_for_advisor = result['sentiment']
 
-        hours_remaining_float = result['hours_remaining']
-        sentiment_score = result['sentiment']
-
-        # Retrieve stoch_k and stoch_d from market_conditions_to_use
+        # Retrieve stoch_k and stoch_d from market_conditions_to_use for confidence advisor calculations
         stoch_k = market_conditions_to_use.get('stoch_k')
         stoch_d = market_conditions_to_use.get('stoch_d')
 
-        # Evaluate Trust Conditions (Total 12 signals now)
-        if hours_remaining_float < 2: trust_signals += 1
-        if market_conditions_to_use['bullish_trend'] and not market_conditions_to_use['macd_bearish_crossover']: trust_signals += 1 # Stronger trend check
-        if abs(sentiment_score) > 0.2: trust_signals += 1
-        if market_conditions_to_use['rsi'] is not None and 30 <= market_conditions_to_use['rsi'] <= 70: trust_signals += 1
-        if abs(sentiment_score) > 0.05 and not market_conditions_to_use['volume_spike_recent']: trust_signals += 1 # No major news expected, and no sudden volume
-        if market_conditions_to_use['candle_bodies_stable'] and not market_conditions_to_use['candle_volatility_high']: trust_signals += 1 # Stable candles, not highly volatile
-        if market_conditions_to_use['macd_bullish_crossover'] and market_conditions_to_use['macd_hist'] > 0: trust_signals += 1 # Confirmed MACD bullish crossover
-        if market_conditions_to_use['stoch_oversold'] and not market_conditions_to_use['stoch_overbought'] and (stoch_k is not None and stoch_d is not None and stoch_k > stoch_d): trust_signals += 1 # Stochastic oversold with bullish cross
-        if market_conditions_to_use['price_near_bb_lower'] and not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding']: trust_signals += 1 # Price near lower BB, not in squeeze/expansion
-        if not market_conditions_to_use['massive_move_recent']: trust_signals += 1 # No massive recent moves (predictability)
-        if not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding']: trust_signals += 1 # Stable Bollinger Bands
-        if not market_conditions_to_use['volume_spike_recent']: trust_signals += 1 # No recent volume spike (less unpredictable)
+        # --- Evaluate Trust Conditions (12 signals) ---
+        trust_conditions_eval = {
+            'time_expiry_lt_2hr': hours_remaining >= 0.25 and hours_remaining < 2, # Must be active and <2hr
+            'trending_cleanly': market_conditions_to_use['bullish_trend'] is True and market_conditions_to_use['macd_bearish_crossover'] is False,
+            'sentiment_strong': abs(sentiment_for_advisor) > 0.2, # Use the correctly defined sentiment_for_advisor
+            'rsi_neutral': market_conditions_to_use['rsi'] is not None and 30 <= market_conditions_to_use['rsi'] <= 70,
+            'no_major_news_expected': abs(sentiment_for_advisor) > 0.05, # Proxy for market conviction, not flat sentiment
+            'candle_bodies_stable_not_volatile': market_conditions_to_use['candle_bodies_stable'] is True and market_conditions_to_use['candle_volatility_high'] is False,
+            'macd_bullish_crossover_confirmed': market_conditions_to_use['macd_bullish_crossover'] is True, # Already implies hist > 0 from definition
+            'stoch_oversold_bullish_cross': market_conditions_to_use['stoch_oversold'] is True and (stoch_k is not None and stoch_d is not None and stoch_k > stoch_d),
+            'price_near_bb_lower': market_conditions_to_use['price_near_bb_lower'] is True,
+            'no_massive_move_recent': market_conditions_to_use['massive_move_recent'] is False,
+            'bb_stable': market_conditions_to_use['bb_contracting'] is False and market_conditions_to_use['bb_expanding'] is False,
+            'no_volume_spike_recent': market_conditions_to_use['volume_spike_recent'] is False
+        }
+        trust_signals = sum(1 for k, v in trust_conditions_eval.items() if v)
 
+        # --- Evaluate Caution Conditions (11 flags as per UI structure) ---
+        caution_conditions_eval = {
+            'target_time_gt_3hr': hours_remaining > 3,
+            'btc_massive_move': market_conditions_to_use['massive_move_recent'] is True,
+            'rsi_extreme': market_conditions_to_use['overbought'] is True or market_conditions_to_use['oversold'] is True,
+            'sentiment_conflicting': abs(sentiment_for_advisor) < 0.05, # Use the correctly defined sentiment_for_advisor
+            'big_news_coming_or_volume_spike': abs(sentiment_for_advisor) < 0.05 or market_conditions_to_use['volume_spike_recent'] is True,
+            'candle_volatility_high': market_conditions_to_use['candle_volatility_high'] is True,
+            'macd_bearish_crossover_confirmed': market_conditions_to_use['macd_bearish_crossover'] is True, # Already implies hist < 0 from definition
+            'stoch_overbought_bearish_cross': market_conditions_to_use['stoch_overbought'] is True and (stoch_k is not None and stoch_d is not None and stoch_k < stoch_d),
+            'price_near_bb_upper_or_bb_volatile': market_conditions_to_use['price_near_bb_upper'] is True or market_conditions_to_use['bb_contracting'] is True or market_conditions_to_use['bb_expanding'] is True,
+            'bb_volatile': market_conditions_to_use['bb_contracting'] is True or market_conditions_to_use['bb_expanding'] is True, # Distinct general volatility flag
+            'volume_spike_recent': market_conditions_to_use['volume_spike_recent'] is True # Distinct volume spike flag
+        }
+        caution_flags = sum(1 for k, v in caution_conditions_eval.items() if v)
 
-        # Evaluate Caution Conditions (Total 12 flags now)
-        if hours_remaining_float > 3: caution_flags += 1
-        if market_conditions_to_use['overbought'] or market_conditions_to_use['oversold']: caution_flags += 1
-        if abs(sentiment_score) < 0.05: caution_flags += 1
-        if market_conditions_to_use['massive_move_recent']: caution_flags += 1
-        if abs(sentiment_score) < 0.05 or market_conditions_to_use['volume_spike_recent']: caution_flags += 1 # Big news coming or sudden volume
-        if market_conditions_to_use['candle_volatility_high']: caution_flags += 1
-        if market_conditions_to_use['macd_bearish_crossover'] and market_conditions_to_use['macd_hist'] < 0: caution_flags += 1 # Confirmed MACD bearish crossover
-        if market_conditions_to_use['stoch_overbought'] and not market_conditions_to_use['stoch_oversold'] and (stoch_k is not None and stoch_d is not None and stoch_k < stoch_d): caution_flags += 1 # Stochastic overbought with bearish cross
-        if market_conditions_to_use['price_near_bb_upper'] or market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding']: caution_flags += 1 # Price near upper BB or BB in squeeze/expansion
-        if market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding']: caution_flags += 1 # Bollinger Bands squeezing or expanding
-        if market_conditions_to_use['volume_spike_recent']: caution_flags += 1 # Recent volume spike (unpredictability)
-
-
-        # Update total counts for advice message (now 12 for both trust and caution)
-        if trust_signals >= 7 and caution_flags < 4: # Adjusted thresholds for more signals
-            advice_message = "🔐 Confidence: *GO with the vote!* (Trust: {}/12, Caution: {}/12)".format(trust_signals, caution_flags)
-        elif caution_flags >= 4: # Adjusted thresholds
-            advice_message = "🔐 Confidence: *SKIP the trade or WAIT!* (Trust: {}/12, Caution: {}/12)".format(trust_signals, caution_flags)
+        # Determine overall advice
+        if trust_signals >= 7 and caution_flags < 4:
+            advice_message = "🔐 Confidence: *GO with the vote!* Strong signals align."
+        elif caution_flags >= 4:
+            advice_message = "🔐 Confidence: *SKIP the trade or WAIT!* High uncertainty detected."
         else:
-            advice_message = "🔐 Confidence: *Proceed with caution or wait for clearer signals.* (Trust: {}/12, Caution: {}/12)".format(trust_signals, caution_flags)
+            advice_message = "🔐 Confidence: *Proceed with caution or wait for clearer signals.* Mixed indicators."
 
         result['confidence_advisor'] = {
             'trust_signals_count': trust_signals,
             'caution_flags_count': caution_flags,
             'advice_message': advice_message,
-            'trust_conditions': {
-                'time_expiry_lt_2hr': hours_remaining_float < 2,
-                'trending_cleanly': bool(market_conditions_to_use['bullish_trend'] and not market_conditions_to_use['macd_bearish_crossover']),
-                'sentiment_strong': abs(sentiment_score) > 0.2,
-                'rsi_neutral': bool(market_conditions_to_use['rsi'] is not None and 30 <= market_conditions_to_use['rsi'] <= 70),
-                'no_major_news_expected_no_volume_spike': abs(sentiment_score) > 0.05 and not market_conditions_to_use['volume_spike_recent'],
-                'candle_bodies_stable_not_volatile': market_conditions_to_use['candle_bodies_stable'] and not market_conditions_to_use['candle_volatility_high'],
-                'macd_bullish_crossover_confirmed': market_conditions_to_use['macd_bullish_crossover'] and market_conditions_to_use['macd_hist'] > 0,
-                'stoch_oversold_bullish_cross': market_conditions_to_use['stoch_oversold'] and not market_conditions_to_use['stoch_overbought'] and (stoch_k is not None and stoch_d is not None and stoch_k > stoch_d),
-                'price_near_bb_lower_stable_bands': market_conditions_to_use['price_near_bb_lower'] and not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding'],
-                'no_massive_move_recent': not market_conditions_to_use['massive_move_recent'],
-                'bb_stable': not market_conditions_to_use['bb_contracting'] and not market_conditions_to_use['bb_expanding'],
-                'no_volume_spike_recent': not market_conditions_to_use['volume_spike_recent']
-            },
-            'caution_conditions': {
-                'target_time_gt_3hr': hours_remaining_float > 3,
-                'rsi_extreme': bool(market_conditions_to_use['overbought'] or market_conditions_to_use['oversold']),
-                'sentiment_conflicting': abs(sentiment_score) < 0.05,
-                'btc_massive_move': market_conditions_to_use['massive_move_recent'],
-                'big_news_coming_or_volume_spike': abs(sentiment_score) < 0.05 or market_conditions_to_use['volume_spike_recent'],
-                'candle_volatility_high': market_conditions_to_use['candle_volatility_high'],
-                'macd_bearish_crossover_confirmed': market_conditions_to_use['macd_bearish_crossover'] and market_conditions_to_use['macd_hist'] < 0,
-                'stoch_overbought_bearish_cross': market_conditions_to_use['stoch_overbought'] and not market_conditions_to_use['stoch_oversold'] and (stoch_k is not None and stoch_d is not None and stoch_k < stoch_d),
-                'price_near_bb_upper_or_bb_volatile': market_conditions_to_use['price_near_bb_upper'] or market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding'],
-                'bb_volatile': market_conditions_to_use['bb_contracting'] or market_conditions_to_use['bb_expanding'],
-                'volume_spike_recent': market_conditions_to_use['volume_spike_recent']
-            }
+            'trust_conditions': trust_conditions_eval,
+            'caution_conditions': caution_conditions_eval
         }
-
-        alert_message = (
-            f"📣 *{currency} Probo Vote Recommendation*\n"
-            f"🕒 Target Time (IST): *{target_time_str}*\n"
-            f"🎯 Target Price: *${result['target_price']}*\n"
-            f"💰 Current: *${result['current_price']:.2f}*\n"
-            f"📈 Projected: *${result['projected_price']:.2f}*\n"
-            f"💬 Sentiment: *{result['sentiment']:.2f}*\n"
-            f"✅ Vote: *{result['vote']}*\n"
-            f"\n--- Confidence Advisor ---\n"
-            f"{advice_message}"
-        )
-        send_telegram_alert(alert_message)
-
+        
         return jsonify(result)
     except ValueError as ve:
         return jsonify({"error": f"Invalid input or time format: {ve}"}), 400
@@ -790,9 +725,193 @@ def predict_outcome():
         print(f"An error occurred during prediction: {e}")
         return jsonify({"error": f"An internal server error occurred during prediction: {e}"}), 500
 
+# --- NEW: Gemini AI Prediction Endpoint ---
+@app.route('/api/gemini_ai_vote', methods=['POST'])
+def gemini_ai_vote():
+    if not gemini_prediction_model:
+        return jsonify({"error": "Gemini prediction model not initialized."}), 500
+
+    data = request.get_json()
+    target_price = data.get('target_price')
+    target_time_str = data.get('target_time') # HH:MM in IST
+    currency = data.get('currency', 'BTC').upper()
+
+    if not target_price or not target_time_str or currency not in ['BTC', 'ETH']:
+        return jsonify({"error": "Missing target_price, target_time, or invalid currency"}), 400
+
+    # Ensure market data is loaded and fresh
+    load_initial_data() 
+
+    df_to_use = None
+    current_price_to_use = 0.0
+    sentiment_to_use = 0.0
+    market_conditions_to_use = {}
+    prophet_projected_price = 0.0
+    prophet_avg_delta = 0.0
+
+    if currency == 'BTC':
+        df_to_use = btc_market_data_df
+        current_price_to_use = btc_current_price
+        sentiment_to_use = btc_sentiment_score
+        market_conditions_to_use = btc_market_conditions
+    elif currency == 'ETH':
+        df_to_use = eth_market_data_df
+        current_price_to_use = eth_current_price
+        sentiment_to_use = eth_sentiment_score
+        market_conditions_to_use = eth_market_conditions
+    
+    if df_to_use is None or df_to_use.empty:
+        return jsonify({"error": f"Market data not available for {currency} AI prediction"}), 500
+
+    try:
+        ist_timezone = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist_timezone)
+        target_time_only = datetime.strptime(target_time_str, "%H:%M").time()
+        target_datetime_ist = now_ist.replace(hour=target_time_only.hour, minute=target_time_only.minute, second=0, microsecond=0)
+
+        if target_datetime_ist < now_ist:
+            target_datetime_ist += timedelta(days=1)
+
+        target_datetime_utc = target_datetime_ist.astimezone(pytz.utc)
+        hours_remaining = (target_datetime_utc - datetime.utcnow().replace(tzinfo=pytz.utc)).total_seconds() / 3600
+        hours_remaining = max(0.25, round(hours_remaining, 2))
+
+        # Get Prophet prediction as part of context for Gemini
+        prophet_projected_price, prophet_avg_delta, _ = predict_future_price(df_to_use, current_price_to_use, hours_remaining)
+
+        # Prepare prompt for Gemini
+        prompt = f"""
+        You are an expert cryptocurrency market analyst and a Probo event predictor. Your task is to analyze the provided market data, technical indicators, and sentiment, then make a highly confident recommendation (YES/NO) for a Probo event based on whether the {currency} price will be AT or ABOVE a target price by a specific target time.
+
+        Here is the current market context for {currency}:
+
+        --- Market Data ---
+        Current Price: ${current_price_to_use:.2f}
+        Time Remaining until Target: {hours_remaining:.2f} hours
+        Target Price for Prediction: ${target_price:.2f}
+        Target Time (IST): {target_time_str}
+        Sentiment Score (from news analysis, -1.0 to 1.0): {sentiment_to_use:.3f}
+
+        --- Technical Indicators (Latest Candle) ---
+        RSI: {market_conditions_to_use.get('rsi', 'N/A'):.2f} (30=oversold, 70=overbought)
+        EMA 20: {market_conditions_to_use.get('ema_20', 'N/A'):.2f}
+        EMA 50: {market_conditions_to_use.get('ema_50', 'N/A'):.2f}
+        MACD: {market_conditions_to_use.get('macd', 'N/A'):.2f}
+        MACD Signal: {market_conditions_to_use.get('macd_signal', 'N/A'):.2f}
+        MACD Histogram: {market_conditions_to_use.get('macd_hist', 'N/A'):.2f} (Positive = bullish momentum, Negative = bearish momentum)
+        Stochastic %K: {market_conditions_to_use.get('stoch_k', 'N/A'):.2f} (20=oversold, 80=overbought)
+        Stochastic %D: {market_conditions_to_use.get('stoch_d', 'N/A'):.2f}
+        Bollinger Bands (Upper/Mid/Lower): {market_conditions_to_use.get('bb_upper', 'N/A'):.2f} / {market_conditions_to_use.get('bb_mid', 'N/A'):.2f} / {market_conditions_to_use.get('bb_lower', 'N/A'):.2f}
+        Bollinger Band Width: {market_conditions_to_use.get('bb_width', 'N/A'):.2f}
+        Bollinger Band %B: {market_conditions_to_use.get('bb_percent', 'N/A'):.2f} (0=lower band, 0.5=mid band, 1=upper band)
+
+        --- Market Conditions / Interpretations ---
+        Bullish Trend (EMA20 > EMA50): {market_conditions_to_use.get('bullish_trend', 'N/A')}
+        RSI Oversold (<30): {market_conditions_to_use.get('oversold', 'N/A')}
+        RSI Overbought (>70): {market_conditions_to_use.get('overbought', 'N/A')}
+        MACD Bullish Crossover (MACD > Signal, Hist > 0): {market_conditions_to_use.get('macd_bullish_crossover', 'N/A')}
+        MACD Bearish Crossover (MACD < Signal, Hist < 0): {market_conditions_to_use.get('macd_bearish_crossover', 'N/A')}
+        Stochastic Oversold (%K/%D < 20 and K > D): {market_conditions_to_use.get('stoch_oversold', 'N/A')}
+        Stochastic Overbought (%K/%D > 80 and K < D): {market_conditions_to_use.get('stoch_overbought', 'N/A')}
+        Price Near BB Lower Band: {market_conditions_to_use.get('price_near_bb_lower', 'N/A')}
+        Price Near BB Upper Band: {market_conditions_to_use.get('price_near_bb_upper', 'N/A')}
+        Bollinger Bands Contracting (getting narrower): {market_conditions_to_use.get('bb_contracting', 'N/A')}
+        Bollinger Bands Expanding (getting wider): {market_conditions_to_use.get('bb_expanding', 'N/A')}
+        Massive Price Move Recently (past 4 hours): {market_conditions_to_use.get('massive_move_recent', 'N/A')}
+        High Candle Volatility (large wicks): {market_conditions_to_use.get('candle_volatility_high', 'N/A')}
+        Stable Candle Bodies (small wicks, decent body): {market_conditions_to_use.get('candle_bodies_stable', 'N/A')}
+        Recent Volume Spike: {market_conditions_to_use.get('volume_spike_recent', 'N/A')}
+
+        --- Prophet Model Projection ---
+        Prophet Projected Price by Target Time: ${prophet_projected_price:.2f}
+        Prophet Average Price Change per Hour: ${prophet_avg_delta:.2f}
+
+        Based on all the above information, including the current price, target price, time remaining, sentiment, all technical indicators, and the interpreted market conditions, should one vote YES or NO on the Probo event?
+
+        Your answer MUST be structured as follows:
+        VOTE: [YES/NO]
+        REASONING: [A concise, yet comprehensive explanation of why you recommend this vote, referencing specific data points and indicators from the provided context. Consider the interplay of trend, momentum, volatility, and sentiment. Also, comment on the Prophet projection and whether your analysis supports or contradicts it.]
+        """
+        # print("Gemini Prompt:\n", prompt) # For debugging
+
+        response = gemini_prediction_model.generate_content(prompt)
+        ai_response_text = response.text.strip()
+        # print("Gemini Raw Response:\n", ai_response_text) # For debugging
+
+        ai_vote = "N/A"
+        ai_reasoning = "Could not parse AI response."
+
+        if ai_response_text.startswith("VOTE:"):
+            lines = ai_response_text.split('\n')
+            for line in lines:
+                if line.startswith("VOTE:"):
+                    ai_vote = line.replace("VOTE:", "").strip()
+                elif line.startswith("REASONING:"):
+                    ai_reasoning = line.replace("REASONING:", "").strip()
+                    # Capture the rest of the lines as well for multi-line reasoning
+                    reasoning_lines = lines[lines.index(line):]
+                    ai_reasoning = "\n".join([l.replace("REASONING:", "").strip() if l.startswith("REASONING:") else l.strip() for l in reasoning_lines])
+                    break # Stop after finding reasoning
+
+        return jsonify({
+            "ai_vote": ai_vote,
+            "ai_reasoning": ai_reasoning,
+            "status": "success"
+        })
+
+    except Exception as e:
+        print(f"Error during Gemini AI prediction: {e}")
+        return jsonify({"error": f"An internal server error occurred during AI prediction: {e}"}), 500
+
+# --- NEW: Gemini AI Chatbot Endpoint ---
+@app.route('/api/ai_chat', methods=['POST'])
+def ai_chat():
+    if not gemini_chat_model:
+        return jsonify({"error": "Gemini chat model not initialized."}), 500
+
+    user_message = request.form.get('message')
+    files = request.files.getlist('files')
+
+    if not user_message and not files:
+        return jsonify({"error": "No message or files provided."}), 400
+
+    content = []
+    if user_message:
+        content.append(user_message)
+
+    for file in files:
+        try:
+            filename = file.filename
+            file_bytes = file.read()
+            mime_type = file.mimetype
+
+            if mime_type.startswith('image/'):
+                img = Image.open(io.BytesIO(file_bytes))
+                content.append(img)
+            elif mime_type == 'text/plain' or 'csv' in mime_type: # Basic text/CSV
+                content.append(f"File '{filename}' content:\n{file_bytes.decode('utf-8')}")
+            else:
+                # Placeholder for other document types
+                content.append(f"Received file '{filename}' ({mime_type}). I can only process text and images directly. For complex formats like PDF, DOCX, XLSX, dedicated libraries would be needed to extract meaningful content.")
+                print(f"Unsupported file type for direct processing: {mime_type} ({filename})")
+                
+        except Exception as e:
+            print(f"Error processing uploaded file {file.filename}: {e}")
+            content.append(f"Error processing file '{file.filename}': {e}")
+    
+    if not content:
+        return jsonify({"error": "No content to send to AI (message or files failed to process)."}), 400
+
+    try:
+        response = gemini_chat_model.generate_content(content)
+        return jsonify({"ai_response": response.text.strip()})
+    except Exception as e:
+        print(f"Error during Gemini AI chat: {e}")
+        return jsonify({"error": f"An internal server error occurred during AI chat: {e}"}), 500
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-
 
 --- END FILE: backend_app.py ---
 
@@ -1053,11 +1172,12 @@ if __name__ == "__main__":
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <!-- Favicon links (ensure these files are in your root directory) -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
-    <link rel="shortcut icon" href="/favicon.ico"> <!-- Generic favicon -->
+    <!-- You might want to create and include proper favicons if deploying -->
+    <!-- <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"> -->
+    <!-- <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"> -->
+    <!-- <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png"> -->
+    <!-- <link rel="manifest" href="/site.webmanifest"> -->
+    <!-- <link rel="shortcut icon" href="/favicon.ico"> -->
 
     <style>
         body {
@@ -1085,7 +1205,7 @@ if __name__ == "__main__":
         h1, h2, h3, h4 {
             color: #FFD700; /* Gold for headings */
         }
-        input[type="number"], input[type="time"], button, select {
+        input[type="number"], input[type="time"], button, select, textarea {
             background-color: #222222; /* Darker grey for inputs */
             border: 1px solid #444444; /* Darker grey border */
             color: #FFD700; /* Gold text */
@@ -1093,7 +1213,7 @@ if __name__ == "__main__":
             border-radius: 0.5rem;
             transition: all 0.2s ease-in-out;
         }
-        input[type="number"]:focus, input[type="time"]:focus, button:focus, select:focus {
+        input[type="number"]:focus, input[type="time"]:focus, button:focus, select:focus, textarea:focus {
             outline: none;
             border-color: #FFD700; /* Gold border on focus */
             box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.3); /* Gold shadow on focus */
@@ -1123,24 +1243,24 @@ if __name__ == "__main__":
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.75rem 0;
+            padding: 0.75rem 1rem; /* Added horizontal padding */
             font-weight: 600;
             color: #DAA520; /* Goldenrod */
             border-bottom: 1px solid #444444;
-            transition: background-color 0.2s ease-in-out; /* Smooth hover */
+            transition: background-color 0.2s ease-in-out, border-radius 0.2s ease-in-out;
         }
         .expander-header:hover {
-            background-color: #222222; /* Darker grey on hover */
+            background-color: #2a2a2a; /* Slightly darker grey on hover */
             border-radius: 0.5rem; /* Apply border-radius on hover */
         }
         .expander-content {
             max-height: 0;
             overflow: hidden;
             transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
-            padding: 0 1rem;
+            padding: 0 1rem; /* Horizontal padding always, vertical only when expanded */
         }
         .expander-content.expanded {
-            max-height: 9999px;
+            max-height: 9999px; /* Large enough value */
             padding: 1rem;
         }
         .arrow {
@@ -1211,8 +1331,114 @@ if __name__ == "__main__":
             100% { transform: rotate(360deg); }
         }
         /* Text colors for YES/NO in confidence advisor */
-        .text-green-400 { color: #9ae6b4; } /* Adjusted green for better contrast */
-        .text-red-400 { color: #feb2b2; } /* Adjusted red for better contrast */
+        .text-green-400 { color: #82E0AA; } /* Adjusted green for better contrast */
+        .text-red-400 { color: #F1948A; } /* Adjusted red for better contrast */
+        .check-icon { color: #28B463; } /* Stronger green for checkmark */
+        .cross-icon { color: #E74C3C; } /* Stronger red for crossmark */
+
+        /* Chatbot specific styles */
+        #chat-window {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            background-color: #222222;
+        }
+        .chat-message {
+            margin-bottom: 0.75rem;
+            display: flex;
+        }
+        .chat-message.user {
+            justify-content: flex-end;
+        }
+        .chat-message.ai {
+            justify-content: flex-start;
+        }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 0.75rem 1rem;
+            border-radius: 1rem;
+            line-height: 1.4;
+        }
+        .chat-bubble.user {
+            background-color: #FFD700; /* Gold bubble for user */
+            color: #000000; /* Black text */
+            border-bottom-right-radius: 0;
+        }
+        .chat-bubble.ai {
+            background-color: #333333; /* Darker grey bubble for AI */
+            color: #FFD700; /* Gold text */
+            border-bottom-left-radius: 0;
+        }
+        .chat-file-preview {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 0.5rem;
+            margin-top: 0.5rem;
+            display: block;
+        }
+        .file-upload-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 0.5rem;
+        }
+        .file-upload-list li {
+            background-color: #333;
+            padding: 0.4rem 0.6rem;
+            border-radius: 0.3rem;
+            margin-bottom: 0.3rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file-upload-list li .remove-file {
+            cursor: pointer;
+            color: #F1948A;
+            margin-left: 0.5rem;
+        }
+
+        /* Floating Chatbot styles */
+        #floating-chat-window-content {
+            width: 384px; /* Default Tailwind w-96 */
+            max-height: 80vh; /* Max height for the chatbot window */
+            max-width: calc(100vw - 2rem); /* Max width for mobile screens */
+            transition: all 0.3s ease-in-out;
+        }
+        #chat-toggle-btn {
+            background-color: #FFD700;
+            color: #000000;
+            padding: 1rem;
+            border-radius: 9999px; /* Tailwind 'rounded-full' */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem; /* Tailwind 'text-2xl' */
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+            margin-bottom: 0.5rem; /* Space between button and chat window */
+            min-width: 56px; /* Ensure button is round */
+            min-height: 56px; /* Ensure button is round */
+        }
+        #chat-toggle-btn:hover {
+            background-color: #DAA520;
+        }
+        /* Mobile adjustments for floating chatbot */
+        @media (max-width: 768px) {
+            #floating-chat-window-content {
+                width: calc(100vw - 2rem); /* Full width on smaller screens, with margin */
+                right: 1rem;
+                left: 1rem;
+            }
+            #floating-chatbot-container {
+                right: 0.5rem;
+                left: 0.5rem;
+                bottom: 0.5rem;
+                align-items: center; /* Center the button and window on mobile */
+            }
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -1221,18 +1447,22 @@ if __name__ == "__main__":
             <i class="fas fa-chart-line text-gold-500 mr-3"></i> Crypto Probo Predictor
         </h1>
 
+        <div class="text-center text-gray-400 mb-6">
+            <p>Unveiling the future of crypto with advanced analytics. Input your Probo deal details to receive an AI-powered prediction and confidence assessment.</p>
+        </div>
+
         <!-- Currency Selector -->
         <div class="bg-gray-900 p-4 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
             <span class="text-xl font-medium text-gray-400 mb-2 md:mb-0">
                 <i class="fas fa-coins text-gold-300 mr-2"></i> Select Cryptocurrency:
             </span>
             <div class="flex space-x-4">
-                <label class="inline-flex items-center">
-                    <input type="radio" class="form-radio text-yellow-500" name="currency" value="BTC" checked>
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="radio" class="form-radio text-yellow-500 h-5 w-5" name="currency" value="BTC" checked>
                     <span class="ml-2 text-gold-300"><i class="fab fa-btc mr-1"></i> Bitcoin (BTC)</span>
                 </label>
-                <label class="inline-flex items-center">
-                    <input type="radio" class="form-radio text-yellow-500" name="currency" value="ETH">
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="radio" class="form-radio text-yellow-500 h-5 w-5" name="currency" value="ETH">
                     <span class="ml-2 text-gold-300"><i class="fab fa-ethereum mr-1"></i> Ethereum (ETH)</span>
                 </label>
             </div>
@@ -1272,14 +1502,14 @@ if __name__ == "__main__":
 
         <div id="prediction-results" class="mt-6 space-y-4">
             <!-- Prediction Summary -->
-            <div id="prediction-summary-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <div id="prediction-summary-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
-                    <i class="fas fa-chart-pie text-gold-300 mr-2"></i> Prediction Summary
+                    <i class="fas fa-chart-pie text-gold-300 mr-2"></i> Prophet Prediction Summary
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
             <div id="prediction-summary-content" class="expander-content bg-gray-900 rounded-lg">
-                <div class="p-4">
+                <div class="p-4 space-y-2">
                     <p class="text-gold-300"><strong class="text-gold-100">Current Price:</strong> <span id="summary-current-price">$0.00</span></p>
                     <p class="text-gold-300"><strong class="text-gold-100">Avg Δ/hr:</strong> <span id="summary-avg-delta">$0.00</span></p>
                     <p class="text-gold-300"><strong class="text-gold-100">Time Left:</strong> <span id="summary-time-left">0 hr(s)</span></p>
@@ -1289,8 +1519,23 @@ if __name__ == "__main__":
                 </div>
             </div>
 
-            <!-- Recommended Vote -->
-            <div id="recommended-vote-message" class="hidden"></div>
+            <!-- Recommended Vote (Prophet) -->
+            <div id="recommended-vote-message" class="hidden text-center text-xl font-bold py-3 px-4 rounded-lg"></div>
+
+            <!-- NEW: Gemini AI Recommended Vote -->
+            <div id="gemini-ai-vote-expander" class="expander-header rounded-lg bg-gray-900 mt-4">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-robot text-gold-300 mr-2"></i> Gemini AI Recommendation
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="gemini-ai-vote-content" class="expander-content bg-gray-900 rounded-lg">
+                <div class="p-4 space-y-2">
+                    <p class="text-gold-300 text-lg"><strong class="text-gold-100">Gemini AI Vote:</strong> <span id="gemini-ai-vote" class="font-bold">N/A</span></p>
+                    <p class="text-gold-300"><strong class="text-gold-100">Reasoning:</strong> <span id="gemini-ai-reasoning" class="block whitespace-pre-wrap">N/A</span></p>
+                    <div id="gemini-vote-spinner" class="loader hidden mx-auto"></div>
+                </div>
+            </div>
 
             <!-- Prediction Confidence Advisor -->
             <hr class="border-gray-800 my-6">
@@ -1298,61 +1543,61 @@ if __name__ == "__main__":
                 <i class="fas fa-lightbulb text-gold-500 mr-2"></i> Prediction Confidence Advisor
             </h3>
 
-            <div id="trust-signals-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <div id="trust-signals-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
                     <i class="fas fa-shield-alt text-green-400 mr-2"></i> Trust Signals
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
             <div id="trust-signals-content" class="expander-content bg-gray-900 rounded-lg">
-                <ul class="list-disc list-inside text-gold-300 space-y-1 p-4">
-                    <li>Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
-                    <li><span id="trust-trend-text">BTC</span> is trending cleanly (up or down): <span id="trust-trend"></span></li>
-                    <li>Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
-                    <li>RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
-                    <li>No major news expected: <span id="trust-news"></span></li>
-                    <li>Candle bodies are stable (not huge wicks): <span id="trust-stable-candles"></span></li>
-                    <li>MACD shows bullish crossover: <span id="trust-macd-bullish"></span></li>
-                    <li>Stochastic is oversold (potential rebound): <span id="trust-stoch-oversold"></span></li>
-                    <li>Price near lower Bollinger Band (potential support): <span id="trust-bb-lower"></span></li>
-                    <li>No massive move recently: <span id="trust-no-massive-move"></span></li>
-                    <li>Bollinger Bands are stable (not squeezing/expanding): <span id="trust-bb-stable"></span></li>
-                    <li>No recent volume spike: <span id="trust-no-volume-spike"></span></li>
+                <ul class="list-none text-gold-300 space-y-2 p-4">
+                    <li><span id="trust-time-icon"></span> Time to expiry is &lt; 2 hours: <span id="trust-time"></span></li>
+                    <li><span id="trust-trend-icon"></span> <span id="trust-currency-name">BTC</span> is trending cleanly (up or down): <span id="trust-trend"></span></li>
+                    <li><span id="trust-sentiment-icon"></span> Sentiment score is strongly positive/negative (&gt;0.2): <span id="trust-sentiment"></span></li>
+                    <li><span id="trust-rsi-icon"></span> RSI is not extreme (30-70): <span id="trust-rsi"></span></li>
+                    <li><span id="trust-news-icon"></span> No major news expected (Sentiment not conflicting): <span id="trust-news"></span></li>
+                    <li><span id="trust-stable-candles-icon"></span> Candle bodies are stable (not huge wicks): <span id="trust-stable-candles"></span></li>
+                    <li><span id="trust-macd-bullish-icon"></span> MACD shows bullish crossover: <span id="trust-macd-bullish"></span></li>
+                    <li><span id="trust-stoch-oversold-icon"></span> Stochastic is oversold (potential rebound): <span id="trust-stoch-oversold"></span></li>
+                    <li><span id="trust-bb-lower-icon"></span> Price near lower Bollinger Band (potential support): <span id="trust-bb-lower"></span></li>
+                    <li><span id="trust-no-massive-move-icon"></span> No massive move recently: <span id="trust-no-massive-move"></span></li>
+                    <li><span id="trust-bb-stable-icon"></span> Bollinger Bands are stable (not squeezing/expanding): <span id="trust-bb-stable"></span></li>
+                    <li><span id="trust-no-volume-spike-icon"></span> No recent volume spike: <span id="trust-no-volume-spike"></span></li>
                 </ul>
             </div>
 
-            <div id="caution-flags-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+            <div id="caution-flags-expander" class="expander-header rounded-lg bg-gray-900">
                 <span class="text-lg text-gold-100">
                     <i class="fas fa-exclamation-triangle text-red-400 mr-2"></i> Caution Flags
                 </span>
                 <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
             </div>
             <div id="caution-flags-content" class="expander-content bg-gray-900 rounded-lg">
-                <ul class="list-disc list-inside text-gold-300 space-y-1 p-4">
-                    <li>Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
-                    <li><span id="caution-massive-move-text">BTC</span> just made a massive move: <span id="caution-massive-move"></span></li>
-                    <li>RSI is &gt; 75 or &lt; 25: <span id="caution-rsi"></span></li>
-                    <li>Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
-                    <li>Big news coming (Fed rate hike, CPI data): <span id="caution-big-news"></span></li>
-                    <li>Candle volatility is high (huge wicks): <span id="caution-volatile-candles"></span></li>
-                    <li>MACD shows bearish crossover: <span id="caution-macd-bearish"></span></li>
-                    <li>Stochastic is overbought (potential reversal): <span id="caution-stoch-overbought"></span></li>
-                    <li>Price near upper Bollinger Band or BB contracting: <span id="caution-bb-upper-contracting"></span></li>
-                    <li>Bollinger Bands are volatile (squeezing/expanding): <span id="caution-bb-volatile"></span></li>
-                    <li>Recent volume spike: <span id="caution-volume-spike"></span></li>
+                <ul class="list-none text-gold-300 space-y-2 p-4">
+                    <li><span id="caution-time-icon"></span> Target time is &gt; 3 hours away: <span id="caution-time"></span></li>
+                    <li><span id="caution-massive-move-icon"></span> <span id="caution-currency-name">BTC</span> just made a massive move: <span id="caution-massive-move"></span></li>
+                    <li><span id="caution-rsi-icon"></span> RSI is &gt; 70 or &lt; 30 (extreme): <span id="caution-rsi"></span></li>
+                    <li><span id="caution-sentiment-icon"></span> Sentiment is conflicting (score ≈ 0): <span id="caution-sentiment"></span></li>
+                    <li><span id="caution-big-news-icon"></span> Market Volatility due to News/Events (sentiment conflicting OR volume spike): <span id="caution-big-news"></span></li>
+                    <li><span id="caution-volatile-candles-icon"></span> Candle volatility is high (huge wicks): <span id="caution-volatile-candles"></span></li>
+                    <li><span id="caution-macd-bearish-icon"></span> MACD shows bearish crossover: <span id="caution-macd-bearish"></span></li>
+                    <li><span id="caution-stoch-overbought-icon"></span> Stochastic is overbought (potential reversal): <span id="caution-stoch-overbought"></span></li>
+                    <li><span id="caution-bb-upper-contracting-icon"></span> Price near upper Bollinger Band or BB contracting: <span id="caution-bb-upper-contracting"></span></li>
+                    <li><span id="caution-bb-volatile-icon"></span> Bollinger Bands are volatile (squeezing/expanding): <span id="caution-bb-volatile"></span></li>
+                    <li><span id="caution-volume-spike-icon"></span> Recent volume spike: <span id="caution-volume-spike"></span></li>
                 </ul>
             </div>
 
             <hr class="border-gray-800 my-6">
-            <p class="text-gold-300"><strong class="text-gold-100">Total Trust Signals Met:</strong> <span id="total-trust-signals">0</span></p>
-            <p class="text-gold-300"><strong class="text-gold-100">Total Caution Flags Present:</strong> <span id="total-caution-flags">0</span></p>
+            <p class="text-gold-300 text-lg"><strong class="text-gold-100">Total Trust Signals Met:</strong> <span id="total-trust-signals" class="text-green-400 font-bold">0</span></p>
+            <p class="text-gold-300 text-lg"><strong class="text-gold-100">Total Caution Flags Present:</strong> <span id="total-caution-flags" class="text-red-400 font-bold">0</span></p>
             <div id="pro-tip-message" class="mt-4"></div>
         </div>
 
         <hr class="border-gray-800 my-6">
 
         <!-- Technical Indicators -->
-        <div id="technical-indicators-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+        <div id="technical-indicators-expander" class="expander-header rounded-lg bg-gray-900">
             <span class="text-lg text-gold-100">
                 <i class="fas fa-flask text-gold-300 mr-2"></i> Technical Indicators
             </span>
@@ -1389,7 +1634,7 @@ if __name__ == "__main__":
                     <div id="metric-bb" class="text-xl font-bold text-gold-300">0.00 / 0.00 / 0.00</div>
                 </div>
             </div>
-            <div class="mt-4 text-gold-300 p-4 pt-0">
+            <div class="mt-4 text-gold-300 p-4 pt-0 space-y-1">
                 <p><strong class="text-gold-100">Trend:</strong> <span id="market-trend"></span></p>
                 <p><strong class="text-gold-100">RSI Zone:</strong> <span id="market-rsi-zone"></span></p>
                 <p><strong class="text-gold-100">Stochastic Zone:</strong> <span id="market-stoch-zone"></span></p>
@@ -1400,17 +1645,59 @@ if __name__ == "__main__":
         <hr class="border-gray-800 my-6">
 
         <!-- Chart -->
-        <div id="chart-expander" class="expander-header rounded-lg px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors duration-200">
+        <!-- CHART EXPANDER IS NOW OPEN BY DEFAULT -->
+        <div id="chart-expander" class="expander-header rounded-lg bg-gray-900 expanded">
             <span class="text-lg text-gold-100">
                 <i class="fas fa-chart-area text-gold-300 mr-2"></i> View Chart
             </span>
-            <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            <svg class="arrow w-5 h-5 text-gold-300 expanded" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
         </div>
-        <div id="chart-content" class="expander-content bg-gray-900 rounded-lg">
-            <div id="candlestick-chart" class="w-full h-[600px] p-4"></div> <!-- Increased height for multiple subplots -->
+        <div id="chart-content" class="expander-content bg-gray-900 rounded-lg expanded">
+            <div id="candlestick-chart" class="w-full h-[600px] p-4"></div>
         </div>
 
         <hr class="border-gray-800 my-6">
+
+        <!-- NEW: Gemini AI Chatbot (Original static section - will be hidden by JS and moved) -->
+        <div id="static-ai-chatbot-section" style="display: none;">
+            <div id="ai-chatbot-expander" class="expander-header rounded-lg bg-gray-900 mt-4">
+                <span class="text-lg text-gold-100">
+                    <i class="fas fa-comments text-gold-300 mr-2"></i> AI Chatbot
+                </span>
+                <svg class="arrow w-5 h-5 text-gold-300" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            </div>
+            <div id="ai-chatbot-content" class="expander-content bg-gray-900 rounded-lg">
+                <div id="chat-window" class="mb-4">
+                    <div class="chat-message ai">
+                        <div class="chat-bubble ai">Hello! I'm your Crypto Probo AI assistant. I can help analyze market data, discuss predictions, or analyze files you upload. What's on your mind?</div>
+                    </div>
+                </div>
+                <div class="file-upload-list" id="uploaded-files-preview"></div>
+                <div class="flex flex-col space-y-2">
+                    <input type="file" id="chat-file-input" multiple accept="image/*, text/*, .pdf, .csv, .docx, .xlsx" class="w-full text-gold-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-gold-300 hover:file:bg-gray-600"/>
+                    <textarea id="chat-input" class="w-full rounded-lg px-4 py-2" rows="3" placeholder="Ask me about crypto, market conditions, or upload a file for analysis..."></textarea>
+                    <button id="send-chat-btn" class="w-full py-2 rounded-lg text-black font-semibold">
+                        Send Message <div id="chat-spinner" class="loader hidden"></div>
+                    </button>
+                </div>
+                <div id="chat-error-message" class="error-message hidden"></div>
+            </div>
+        </div>
+
+        <hr class="border-gray-800 my-6">
+
+        <!-- Overlay Feature Explanation -->
+        <div class="warning-message text-center mb-6">
+            <h3 class="font-bold text-lg mb-2">
+                <i class="fas fa-exclamation-circle mr-2"></i> Important Note on Mobile Overlay
+            </h3>
+            <p class="text-sm">
+                The requested feature to scan your phone screen for Probo data and overlay predictions is **not technically possible** within a standard web application due to strict security and privacy policies of web browsers and mobile operating systems (iOS/Android).
+            </p>
+            <p class="text-sm mt-2">
+                Websites are restricted from accessing content outside their own tab. Implementing such a feature would require developing a complex native mobile application with special OS permissions, which is beyond the scope of a web-based project. Please manually input the data from Probo into this tool.
+            </p>
+        </div>
 
         <!-- Cheat Sheet Reference -->
         <h2 class="text-2xl font-semibold mb-4 text-gold-100">
@@ -1419,96 +1706,49 @@ if __name__ == "__main__":
         <p class="text-gold-400 mb-4">This section provides the original guidelines for reference, updated with new indicators.</p>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">✅ TRUST the Prediction When:</h3>
-        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
-            <li><strong>Condition</strong>: Time to expiry is &lt; 2 hours
-                <ul><li><strong>Why</strong>: Short-term moves are easier to project with recent trend/sentiment</li></ul>
-            </li>
-            <li><strong>Condition</strong>: BTC is trending cleanly (up or down)
-                <ul><li><strong>Why</strong>: EMA crossover + delta will align clearly</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Sentiment score is strongly positive/negative (&gt;0.2)
-                <ul><li><strong>Why</strong>: Clear market direction from sentiment</li></ul>
-            </li>
-            <li><strong>Condition</strong>: RSI is not extreme (30–70)
-                <ul><li><strong>Why</strong>: Means no strong mean-reversion counterforces</li></ul>
-            </li>
-            <li><strong>Condition</strong>: No major news expected
-                <ul><li><strong>Why</strong>: Market moves more "technically" in news-free windows</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Candle bodies are stable (not huge wicks)
-                <ul><li><strong>Why</strong>: Less noise = better delta prediction accuracy</li></ul>
-            </li>
-            <li><strong>Condition</strong>: MACD shows bullish crossover
-                <ul><li><strong>Why</strong>: Indicates strengthening upward momentum</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Stochastic is oversold (potential rebound)
-                <ul><li><strong>Why</strong>: Price may be due for an upward correction</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Price near lower Bollinger Band (potential support)
-                <ul><li><strong>Why</strong>: Suggests price is at a strong support level</li></ul>
-            </li>
-            <li><strong>Condition</strong>: No massive move recently
-                <ul><li><strong>Why</strong>: Predictable price action</li></ul>
-            </li>
-            <li><strong>Condition</strong>: Bollinger Bands are stable (not squeezing/expanding)
-                <ul><li><strong>Why</strong>: Less volatility uncertainty</li></ul>
-            </li>
-            <li><strong>Condition</strong>: No recent volume spike
-                <ul><li><strong>Why</strong>: Market not reacting to sudden news/events</li></ul>
-            </li>
+        <ul class="list-disc list-inside text-gold-300 space-y-2 mb-4">
+            <li><strong>Time to expiry is &lt; 2 hours</strong>: Short-term moves are easier to project with recent trend/sentiment.</li>
+            <li><strong>[Currency] is trending cleanly (up or down)</strong>: EMA crossover + delta will align clearly; MACD bearish crossover is absent.</li>
+            <li><strong>Sentiment score is strongly positive/negative (&gt;0.2)</strong>: Clear market direction from sentiment.</li>
+            <li><strong>RSI is not extreme (30–70)</strong>: Means no strong mean-reversion counterforces.</li>
+            <li><strong>No major news expected</strong>: Market moves more "technically" in news-free windows; sentiment score > 0.05.</li>
+            <li><strong>Candle bodies are stable (not huge wicks)</strong>: Less noise = better delta prediction accuracy. Candle volatility is low.</li>
+            <li><strong>MACD shows bullish crossover</strong>: Indicates strengthening upward momentum; MACD line > Signal line and Histogram > 0.</li>
+            <li><strong>Stochastic is oversold (potential rebound)</strong>: Price may be due for an upward correction; %K &lt; 20, %D &lt; 20, and %K > %D.</li>
+            <li><strong>Price near lower Bollinger Band (potential support)</strong>: Suggests price is at a strong support level.</li>
+            <li><strong>No massive move recently</strong>: Predictable price action.</li>
+            <li><strong>Bollinger Bands are stable (not squeezing/expanding)</strong>: Less volatility uncertainty.</li>
+            <li><strong>No recent volume spike</strong>: Market not reacting to sudden news/events.</li>
         </ul>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">⚠️ BE CAUTIOUS / DOUBLE-CHECK When:</h3>
-        <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
-            <li><strong>Red Flag</strong>: Target time is &gt; 3 hours away
-                <ul><li><strong>Why</strong>: Market conditions may shift unpredictably</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: BTC just made a massive move
-                <ul><li><strong>Why</strong>: Mean reversion likely → momentum may reverse</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: RSI is &gt; 75 or &lt; 25
-                <ul><li><strong>Why</strong>: Overbought/oversold zones are prone to reversals</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Sentiment is conflicting (score ≈ 0)
-                <ul><li><strong>Why</strong>: Market indecisive — avoid betting</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Big news coming (Fed rate hike, CPI data)
-                <ul><li><strong>Why</strong>: Trends and sentiment can break instantly</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Candle volatility is high (huge wicks)
-                <ul><li><strong>Why</strong>: Delta estimates become noisy and inaccurate</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: MACD shows bearish crossover
-                <ul><li><strong>Why</strong>: Indicates strengthening downward momentum</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Stochastic is overbought (potential reversal)
-                <ul><li><strong>Why</b>: Price may be due for a downward correction</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Price near upper Bollinger Band or BB contracting
-                <ul><li><strong>Why</strong>: Suggests strong resistance or potential for volatile breakout</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Bollinger Bands are volatile (squeezing/expanding)
-                <ul><li><strong>Why</strong>: High uncertainty, potential for sharp moves</li></ul>
-            </li>
-            <li><strong>Red Flag</strong>: Recent volume spike
-                <ul><li><strong>Why</strong>: Market reacting to sudden news/events, unpredictable</li></ul>
-            </li>
+        <ul class="list-disc list-inside text-gold-300 space-y-2 mb-4">
+            <li><strong>Target time is &gt; 3 hours away</strong>: Market conditions may shift unpredictably.</li>
+            <li><strong>[Currency] just made a massive move</strong>: Mean reversion likely → momentum may reverse.</li>
+            <li><strong>RSI is &gt; 70 or &lt; 30 (extreme)</strong>: Overbought/oversold zones are prone to reversals.</li>
+            <li><strong>Sentiment is conflicting (score ≈ 0)</strong>: Market indecisive — avoid betting.</li>
+            <li><strong>Market Volatility due to News/Events (sentiment conflicting OR volume spike)</strong>: Trends and sentiment can break instantly due to external factors or sudden interest.</li>
+            <li><strong>Candle volatility is high (huge wicks)</strong>: Delta estimates become noisy and inaccurate.</li>
+            <li><strong>MACD shows bearish crossover</strong>: Indicates strengthening downward momentum; MACD line &lt; Signal line and Histogram &lt; 0.</li>
+            <li><strong>Stochastic is overbought (potential reversal)</strong>: Price may be due for a downward correction; %K &gt; 80, %D &gt; 80, and %K &lt; %D.</li>
+            <li><strong>Price near upper Bollinger Band or BB contracting</strong>: Suggests strong resistance or potential for volatile breakout.</li>
+            <li><strong>Bollinger Bands are volatile (squeezing/expanding)</strong>: High uncertainty, potential for sharp moves.</li>
+            <li><strong>Recent volume spike</strong>: Market reacting to sudden news/events, unpredictable.</li>
         </ul>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">🔐 Pro Tip (Original Reference):</h3>
-        <p class="text-gold-300 mb-2">If at least 7/12 “Trust” signals align → GO with the vote.</p>
+        <p class="text-gold-300 mb-2">If at least 7/12 “Trust” signals align AND less than 4 “Caution” flags are present → GO with the vote.</p>
         <p class="text-gold-300 mb-4">If 4+ “Caution” flags are present → SKIP the trade or wait.</p>
 
         <h3 class="text-xl font-semibold text-gold-100 mb-2">✅ Example: When to TRUST (Original Reference)</h3>
         <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li>Time: 1 hour left</li>
-            <li>BTC uptrending</li>
-            <li>EMA20 &gt; EMA50</li>
-            <li>RSI = 58</li>
-            <li>Sentiment = +0.3</li>
+            <li>BTC uptrending (EMA20 &gt; EMA50, no bearish MACD cross)</li>
+            <li>RSI = 58 (Neutral)</li>
+            <li>Sentiment = +0.3 (Strong positive)</li>
             <li>MACD bullish crossover</li>
-            <li>Stochastic not extreme</li>
-            <li>Price not near BB extremes</li>
+            <li>Stochastic not extreme (e.g., 40, 35)</li>
+            <li>Price not near BB extremes (e.g., mid-band)</li>
             <li>No massive move recently</li>
             <li>BB stable</li>
             <li>No recent volume spike</li>
@@ -1518,11 +1758,11 @@ if __name__ == "__main__":
         <h3 class="text-xl font-semibold text-gold-100 mb-2">⚠️ Example: When to AVOID (Original Reference)</h3>
         <ul class="list-disc list-inside text-gold-300 space-y-1 mb-4">
             <li>Time: 4 hours left</li>
-            <li>BTC dumped $800 in 15 mins</li>
-            <li>RSI = 22</li>
-            <li>Sentiment = 0.05</li>
+            <li>BTC dumped $800 in 15 mins (Massive move)</li>
+            <li>RSI = 22 (Oversold)</li>
+            <li>Sentiment = 0.05 (Conflicting)</li>
             <li>MACD bearish crossover</li>
-            <li>Stochastic overbought</li>
+            <li>Stochastic overbought (e.g., 90, 85)</li>
             <li>Price near upper BB</li>
             <li>BB squeezing</li>
             <li>Recent volume spike</li>
@@ -1536,7 +1776,12 @@ if __name__ == "__main__":
         function setupExpander(headerId, contentId) {
             const header = document.getElementById(headerId);
             const content = document.getElementById(contentId);
-            const arrow = header.querySelector('.arrow');
+            const arrow = header ? header.querySelector('.arrow') : null;
+
+            if (!header || !content || !arrow) { // Robustness check
+                // console.warn(`Expander setup failed for ${headerId}. Element not found.`);
+                return;
+            }
 
             header.addEventListener('click', () => {
                 const isExpanded = content.classList.contains('expanded');
@@ -1550,17 +1795,9 @@ if __name__ == "__main__":
             });
         }
 
-        // Setup all expanders
-        document.addEventListener('DOMContentLoaded', () => {
-            setupExpander('prediction-summary-expander', 'prediction-summary-content');
-            setupExpander('technical-indicators-expander', 'technical-indicators-content');
-            setupExpander('chart-expander', 'chart-content');
-            setupExpander('trust-signals-expander', 'trust-signals-content');
-            setupExpander('caution-flags-expander', 'caution-flags-content');
-        });
-
         // --- Backend API URL ---
-        const BACKEND_API_URL = 'http://localhost:5000'; // IMPORTANT: Change this for deployment!
+        const BACKEND_API_URL = 'http://localhost:5000'; // Use this for local development!
+        // const BACKEND_API_URL = 'https://html-probo-predictor-website.onrender.com'; // IMPORTANT: Change this for deployment!
 
         // Global data storage for both BTC and ETH
         let allMarketData = {
@@ -1571,7 +1808,26 @@ if __name__ == "__main__":
 
         // --- UI Update Functions ---
 
-        function updateUI(currencyData, predictionResult = null) {
+        function updateConfidenceSignal(elementId, isTrue) {
+            const element = document.getElementById(elementId);
+            const iconId = elementId + '-icon';
+            const iconElement = document.getElementById(iconId);
+
+            if (!element) return; // Guard against missing elements
+
+            if (isTrue) {
+                element.innerHTML = '<strong class="text-green-400">YES</strong>';
+                if (iconElement) iconElement.innerHTML = '<i class="fas fa-check-circle check-icon mr-2"></i>';
+            } else {
+                element.innerHTML = '<strong class="text-red-400">NO</strong>';
+                if (iconElement) iconElement.innerHTML = '<i class="fas fa-times-circle cross-icon mr-2"></i>';
+            }
+        }
+
+        // Global variable to keep track of chart instances
+        let plotlyChartInstance = null;
+
+        function updateUI(currencyData, predictionResult = null, geminiAiResult = null) {
             const { current_price, sentiment_score, market_conditions, chart_data } = currencyData;
 
             // Update currency symbol display
@@ -1581,79 +1837,90 @@ if __name__ == "__main__":
             document.getElementById('current-price-display').textContent = `$${current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
             // Update Technical Indicators
-            document.getElementById('metric-rsi').textContent = market_conditions.rsi ? market_conditions.rsi.toFixed(2) : 'N/A';
-            document.getElementById('metric-ema20').textContent = market_conditions.ema_20 ? market_conditions.ema_20.toFixed(2) : 'N/A';
-            document.getElementById('metric-ema50').textContent = market_conditions.ema_50 ? market_conditions.ema_50.toFixed(2) : 'N/A';
-            document.getElementById('metric-macd').textContent = market_conditions.macd ? market_conditions.macd.toFixed(2) : 'N/A';
-            document.getElementById('metric-stochk').textContent = market_conditions.stoch_k ? market_conditions.stoch_k.toFixed(2) : 'N/A';
-            document.getElementById('metric-stochd').textContent = market_conditions.stoch_d ? market_conditions.stoch_d.toFixed(2) : 'N/A';
-            
-            const bbUpper = market_conditions.bb_upper ? market_conditions.bb_upper.toFixed(2) : 'N/A';
-            const bbMid = market_conditions.bb_mid ? market_conditions.bb_mid.toFixed(2) : 'N/A';
-            const bbLower = market_conditions.bb_lower ? market_conditions.bb_lower.toFixed(2) : 'N/A';
+            document.getElementById('metric-rsi').textContent = market_conditions.rsi !== null ? market_conditions.rsi.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema20').textContent = market_conditions.ema_20 !== null ? market_conditions.ema_20.toFixed(2) : 'N/A';
+            document.getElementById('metric-ema50').textContent = market_conditions.ema_50 !== null ? market_conditions.ema_50.toFixed(2) : 'N/A';
+            document.getElementById('metric-macd').textContent = market_conditions.macd !== null ? market_conditions.macd.toFixed(2) : 'N/A';
+            document.getElementById('metric-stochk').textContent = market_conditions.stoch_k !== null ? market_conditions.stoch_k.toFixed(2) : 'N/A';
+            document.getElementById('metric-stochd').textContent = market_conditions.stoch_d !== null ? market_conditions.stoch_d.toFixed(2) : 'N/A';
+
+            const bbUpper = market_conditions.bb_upper !== null ? market_conditions.bb_upper.toFixed(2) : 'N/A';
+            const bbMid = market_conditions.bb_mid !== null ? market_conditions.bb_mid.toFixed(2) : 'N/A';
+            const bbLower = market_conditions.bb_lower !== null ? market_conditions.bb_lower.toFixed(2) : 'N/A';
             document.getElementById('metric-bb').textContent = `${bbUpper} / ${bbMid} / ${bbLower}`;
-            document.getElementById('metric-bb-width').textContent = market_conditions.bb_width ? market_conditions.bb_width.toFixed(2) : 'N/A';
+            document.getElementById('metric-bb-width').textContent = market_conditions.bb_width !== null ? market_conditions.bb_width.toFixed(2) : 'N/A';
 
 
-            document.getElementById('market-trend').textContent = market_conditions.bullish_trend ? '📈 Uptrend' : '📉 Downtrend';
+            document.getElementById('market-trend').textContent = market_conditions.bullish_trend ? '📈 Uptrend (EMA20 > EMA50)' : '📉 Downtrend (EMA20 < EMA50)';
             let rsiZone = '';
-            if (market_conditions.overbought) rsiZone = '🔥 Overbought';
-            else if (market_conditions.oversold) rsiZone = '🧊 Oversold';
-            else rsiZone = '✅ Neutral';
+            if (market_conditions.overbought) rsiZone = '🔥 Overbought (>70)';
+            else if (market_conditions.oversold) rsiZone = '🧊 Oversold (<30)';
+            else rsiZone = '✅ Neutral (30-70)';
             document.getElementById('market-rsi-zone').textContent = rsiZone;
 
             let stochZone = '';
-            if (market_conditions.stoch_overbought) stochZone = '🔥 Overbought';
-            else if (market_conditions.stoch_oversold) stochZone = '🧊 Oversold';
-            else stochZone = '✅ Neutral';
+            if (market_conditions.stoch_overbought) stochZone = '🔥 Overbought (>80)';
+            else if (market_conditions.stoch_oversold) stochZone = '🧊 Oversold (<20)';
+            else stochZone = '✅ Neutral (20-80)';
             document.getElementById('market-stoch-zone').textContent = stochZone;
 
             // Update Chart
             drawChart(chart_data);
 
-            // Update Prediction Summary and Confidence Advisor if predictionResult is available
+            // Update Prophet Prediction Summary and Confidence Advisor if predictionResult is available
             if (predictionResult) {
                 document.getElementById('summary-current-price').textContent = `$${predictionResult.current_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 document.getElementById('summary-avg-delta').textContent = `$${predictionResult.avg_delta_per_hour.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 document.getElementById('summary-time-left').textContent = `${predictionResult.hours_remaining} hr(s)`;
                 document.getElementById('summary-projected-price').textContent = `$${predictionResult.projected_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 document.getElementById('summary-sentiment-score').textContent = predictionResult.sentiment.toFixed(2);
-                document.getElementById('summary-target-time').textContent = predictionResult.target_time;
+                document.getElementById('summary-target-time').textContent = predictionResult.target_time_ist; // Use IST string here
 
                 const voteMessageDiv = document.getElementById('recommended-vote-message');
-                voteMessageDiv.innerHTML = `<div class="success-message">🧠 Recommended Vote: <strong>${predictionResult.vote}</strong></div>`;
+                if (predictionResult.vote === "YES") {
+                    voteMessageDiv.className = 'success-message text-center text-xl font-bold py-3 px-4 rounded-lg';
+                    voteMessageDiv.innerHTML = `🧠 Prophet Recommended Vote: <strong class="text-green-400">YES</strong>`;
+                } else {
+                    voteMessageDiv.className = 'warning-message text-center text-xl font-bold py-3 px-4 rounded-lg';
+                    voteMessageDiv.innerHTML = `🧠 Prophet Recommended Vote: <strong class="text-red-400">NO</strong>`;
+                }
                 voteMessageDiv.classList.remove('hidden');
 
                 const confidence = predictionResult.confidence_advisor;
-                
+
                 // Update Trust Signals
-                document.getElementById('trust-time').innerHTML = confidence.trust_conditions.time_expiry_lt_2hr ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-trend-text').textContent = selectedCurrency;
-                document.getElementById('trust-trend').innerHTML = confidence.trust_conditions.trending_cleanly ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO (Trend unclear/Choppy)</strong>';
-                document.getElementById('trust-sentiment').innerHTML = confidence.trust_conditions.sentiment_strong ? `<strong class="text-green-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
-                document.getElementById('trust-rsi').innerHTML = confidence.trust_conditions.rsi_neutral ? `<strong class="text-green-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-red-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
-                document.getElementById('trust-news').innerHTML = confidence.trust_conditions.no_major_news_expected_no_volume_spike ? '<strong class="text-green-400">YES</strong> (Sentiment not conflicting / No volume spike)' : '<strong class="text-red-400">NO</strong> (Sentiment conflicting / Volume spike)';
-                document.getElementById('trust-stable-candles').innerHTML = confidence.trust_conditions.candle_bodies_stable_not_volatile ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-macd-bullish').innerHTML = confidence.trust_conditions.macd_bullish_crossover_confirmed ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-stoch-oversold').innerHTML = confidence.trust_conditions.stoch_oversold_bullish_cross ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-bb-lower').innerHTML = confidence.trust_conditions.price_near_bb_lower_stable_bands ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-no-massive-move').innerHTML = confidence.trust_conditions.no_massive_move_recent ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-bb-stable').innerHTML = confidence.trust_conditions.bb_stable ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
-                document.getElementById('trust-no-volume-spike').innerHTML = confidence.trust_conditions.no_volume_spike_recent ? '<strong class="text-green-400">YES</strong>' : '<strong class="text-red-400">NO</strong>';
+                document.getElementById('trust-currency-name').textContent = selectedCurrency;
+                updateConfidenceSignal('trust-time', confidence.trust_conditions.time_expiry_lt_2hr);
+                updateConfidenceSignal('trust-trend', confidence.trust_conditions.trending_cleanly);
+                updateConfidenceSignal('trust-sentiment', confidence.trust_conditions.sentiment_strong);
+                document.getElementById('trust-sentiment').innerHTML += ` (Score: ${sentiment_score.toFixed(2)})`; // Add score for context
+                updateConfidenceSignal('trust-rsi', confidence.trust_conditions.rsi_neutral);
+                document.getElementById('trust-rsi').innerHTML += ` (RSI: ${market_conditions.rsi !== null ? market_conditions.rsi.toFixed(2) : 'N/A'})`; // Add RSI for context
+                updateConfidenceSignal('trust-news', confidence.trust_conditions.no_major_news_expected);
+                updateConfidenceSignal('trust-stable-candles', confidence.trust_conditions.candle_bodies_stable_not_volatile);
+                updateConfidenceSignal('trust-macd-bullish', confidence.trust_conditions.macd_bullish_crossover_confirmed);
+                updateConfidenceSignal('trust-stoch-oversold', confidence.trust_conditions.stoch_oversold_bullish_cross);
+                updateConfidenceSignal('trust-bb-lower', confidence.trust_conditions.price_near_bb_lower);
+                updateConfidenceSignal('trust-no-massive-move', confidence.trust_conditions.no_massive_move_recent);
+                updateConfidenceSignal('trust-bb-stable', confidence.trust_conditions.bb_stable);
+                updateConfidenceSignal('trust-no-volume-spike', confidence.trust_conditions.no_volume_spike_recent);
+
 
                 // Update Caution Flags
-                document.getElementById('caution-time').innerHTML = confidence.caution_conditions.target_time_gt_3hr ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-massive-move-text').textContent = selectedCurrency;
-                document.getElementById('caution-massive-move').innerHTML = confidence.caution_conditions.btc_massive_move ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-rsi').innerHTML = confidence.caution_conditions.rsi_extreme ? `<strong class="text-red-400">YES</strong> (RSI: ${market_conditions.rsi.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (RSI: ${market_conditions.rsi.toFixed(2)})`;
-                document.getElementById('caution-sentiment').innerHTML = confidence.caution_conditions.sentiment_conflicting ? `<strong class="text-red-400">YES</strong> (Score: ${sentiment_score.toFixed(2)})` : `<strong class="text-green-400">NO</strong> (Score: ${sentiment_score.toFixed(2)})`;
-                document.getElementById('caution-big-news').innerHTML = confidence.caution_conditions.big_news_coming_or_volume_spike ? '<strong class="text-red-400">YES</strong> (Sentiment conflicting / Volume spike)' : '<strong class="text-green-400">NO</strong> (Sentiment not conflicting / No volume spike)';
-                document.getElementById('caution-volatile-candles').innerHTML = confidence.caution_conditions.candle_volatility_high ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-macd-bearish').innerHTML = confidence.caution_conditions.macd_bearish_crossover_confirmed ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-stoch-overbought').innerHTML = confidence.caution_conditions.stoch_overbought_bearish_cross ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-bb-upper-contracting').innerHTML = confidence.caution_conditions.price_near_bb_upper_or_bb_volatile ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-bb-volatile').innerHTML = confidence.caution_conditions.bb_volatile ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
-                document.getElementById('caution-volume-spike').innerHTML = confidence.caution_conditions.volume_spike_recent ? '<strong class="text-red-400">YES</strong>' : '<strong class="text-green-400">NO</strong>';
+                document.getElementById('caution-currency-name').textContent = selectedCurrency;
+                updateConfidenceSignal('caution-time', confidence.caution_conditions.target_time_gt_3hr);
+                updateConfidenceSignal('caution-massive-move', confidence.caution_conditions.btc_massive_move);
+                updateConfidenceSignal('caution-rsi', confidence.caution_conditions.rsi_extreme);
+                document.getElementById('caution-rsi').innerHTML += ` (RSI: ${market_conditions.rsi !== null ? market_conditions.rsi.toFixed(2) : 'N/A'})`; // Add RSI for context
+                updateConfidenceSignal('caution-sentiment', confidence.caution_conditions.sentiment_conflicting);
+                document.getElementById('caution-sentiment').innerHTML += ` (Score: ${sentiment_score.toFixed(2)})`; // Add score for context
+                updateConfidenceSignal('caution-big-news', confidence.caution_conditions.big_news_coming_or_volume_spike);
+                updateConfidenceSignal('caution-volatile-candles', confidence.caution_conditions.candle_volatility_high);
+                updateConfidenceSignal('caution-macd-bearish', confidence.caution_conditions.macd_bearish_crossover_confirmed);
+                updateConfidenceSignal('caution-stoch-overbought', confidence.caution_conditions.stoch_overbought_bearish_cross);
+                updateConfidenceSignal('caution-bb-upper-contracting', confidence.caution_conditions.price_near_bb_upper_or_bb_volatile); // Adjusted to match backend key
+                updateConfidenceSignal('caution-bb-volatile', confidence.caution_conditions.bb_volatile);
+                updateConfidenceSignal('caution-volume-spike', confidence.caution_conditions.volume_spike_recent);
 
 
                 document.getElementById('total-trust-signals').textContent = confidence.trust_signals_count;
@@ -1670,11 +1937,60 @@ if __name__ == "__main__":
                 } else {
                     proTipClass = 'info-message';
                 }
-                proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong>${adviceMessage}</strong></div>`;
+                proTipMessageDiv.innerHTML = `<div class="${proTipClass}"><strong class="text-lg">${adviceMessage}</strong><p class="text-sm mt-1">Trust: ${confidence.trust_signals_count}/12, Caution: ${confidence.caution_flags_count}/11</p></div>`;
             } else {
-                // Clear prediction results if no prediction is made
+                // Clear prediction results if no prediction is active
                 document.getElementById('recommended-vote-message').classList.add('hidden');
                 document.getElementById('pro-tip-message').innerHTML = '';
+
+                // Reset confidence advisor status to N/A
+                const trustElements = [
+                    'trust-time', 'trust-trend', 'trust-sentiment', 'trust-rsi', 'trust-news',
+                    'trust-stable-candles', 'trust-macd-bullish', 'trust-stoch-oversold',
+                    'trust-bb-lower', 'trust-no-massive-move', 'trust-bb-stable', 'trust-no-volume-spike'
+                ];
+                const cautionElements = [
+                    'caution-time', 'caution-massive-move', 'caution-rsi', 'caution-sentiment',
+                    'caution-big-news', 'caution-volatile-candles', 'caution-macd-bearish',
+                    'caution-stoch-overbought', 'caution-bb-upper-contracting',
+                    'caution-bb-volatile', 'caution-volume-spike'
+                ];
+
+                trustElements.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = 'N/A';
+                    const iconElement = document.getElementById(id + '-icon');
+                    if (iconElement) iconElement.innerHTML = '<i class="fas fa-question-circle text-gray-500 mr-2"></i>';
+                });
+                cautionElements.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = 'N/A';
+                    const iconElement = document.getElementById(id + '-icon');
+                    if (iconElement) iconElement.innerHTML = '<i class="fas fa-question-circle text-gray-500 mr-2"></i>';
+                });
+
+                document.getElementById('total-trust-signals').textContent = '0';
+                document.getElementById('total-caution-flags').textContent = '0';
+
+                document.getElementById('trust-currency-name').textContent = selectedCurrency;
+                document.getElementById('caution-currency-name').textContent = selectedCurrency;
+            }
+
+            // Update Gemini AI Vote Section
+            const geminiAiVoteElem = document.getElementById('gemini-ai-vote');
+            const geminiAiReasoningElem = document.getElementById('gemini-ai-reasoning');
+            if (geminiAiResult) {
+                if (geminiAiResult.ai_vote === "YES") {
+                    geminiAiVoteElem.innerHTML = `<strong class="text-green-400">YES</strong>`;
+                } else if (geminiAiResult.ai_vote === "NO") {
+                    geminiAiVoteElem.innerHTML = `<strong class="text-red-400">NO</strong>`;
+                } else {
+                    geminiAiVoteElem.innerHTML = `<strong class="text-gray-400">N/A</strong>`;
+                }
+                geminiAiReasoningElem.textContent = geminiAiResult.ai_reasoning;
+            } else {
+                geminiAiVoteElem.innerHTML = `<strong class="text-gray-400">N/A</strong>`;
+                geminiAiReasoningElem.textContent = 'Awaiting prediction...';
             }
         }
 
@@ -1684,6 +2000,7 @@ if __name__ == "__main__":
             if (!Array.isArray(chartData) || chartData.length === 0) {
                 console.warn("No chart data available to draw.");
                 Plotly.purge('candlestick-chart');
+                plotlyChartInstance = null; // Clear instance if no data
                 return;
             }
 
@@ -1899,7 +2216,8 @@ if __name__ == "__main__":
                     type: 'date',
                     tickfont: { color: '#DAA520' },
                     gridcolor: '#333333',
-                    linecolor: '#444444'
+                    linecolor: '#444444',
+                    range: [0, 100] /* Stochastic is always 0-100 */
                 },
                 yaxis: {
                     title: 'Price (USDT)',
@@ -1939,17 +2257,34 @@ if __name__ == "__main__":
                 }
             };
 
-            Plotly.newPlot('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true });
+            if (plotlyChartInstance) {
+                // If chart exists, update it with new data
+                Plotly.react('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true });
+            } else {
+                // Otherwise, create a new chart
+                Plotly.newPlot('candlestick-chart', traces, layout, { responsive: true, displayModeBar: true })
+                    .then(gd => {
+                        plotlyChartInstance = gd; // Store the chart instance
+                    })
+                    .catch(error => {
+                        console.error("Error creating Plotly chart:", error);
+                        Plotly.purge('candlestick-chart');
+                        plotlyChartInstance = null;
+                        document.getElementById('candlestick-chart').innerHTML = '<div class="error-message text-center p-4">❌ Failed to load chart. Check console for details.</div>';
+                    });
+            }
         }
 
         // --- Main Application Logic ---
 
         function showLoading(elementId) {
-            document.getElementById(elementId).classList.remove('hidden');
+            const element = document.getElementById(elementId);
+            if (element) element.classList.remove('hidden');
         }
 
         function hideLoading(elementId) {
-            document.getElementById(elementId).classList.add('hidden');
+            const element = document.getElementById(elementId);
+            if (element) element.classList.add('hidden');
         }
 
         function updateCurrentISTTime() {
@@ -1960,16 +2295,22 @@ if __name__ == "__main__":
                 hour12: false,
                 timeZone: 'Asia/Kolkata'
             };
-            document.getElementById('current-ist-time').textContent = now.toLocaleTimeString('en-IN', options);
+            const timeElement = document.getElementById('current-ist-time');
+            if (timeElement) timeElement.textContent = now.toLocaleTimeString('en-IN', options);
         }
 
         async function initializeApp() {
             showLoading('loading-spinner');
-            document.getElementById('current-price-display').textContent = "Loading...";
+            const priceDisplay = document.getElementById('current-price-display');
+            if (priceDisplay) priceDisplay.textContent = "Loading...";
+
             const messageDiv = document.getElementById('recommended-vote-message');
-            messageDiv.innerHTML = '';
-            messageDiv.classList.add('hidden');
-            document.getElementById('pro-tip-message').innerHTML = '';
+            if (messageDiv) {
+                messageDiv.innerHTML = '';
+                messageDiv.classList.add('hidden');
+            }
+            const proTipMessage = document.getElementById('pro-tip-message');
+            if (proTipMessage) proTipMessage.innerHTML = '';
 
             try {
                 const response = await fetch(`${BACKEND_API_URL}/api/market_data`);
@@ -1978,16 +2319,18 @@ if __name__ == "__main__":
                     throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || response.statusText}`);
                 }
                 allMarketData = await response.json();
-                
-                // Update UI with data for the currently selected currency
-                updateUI(allMarketData[selectedCurrency]);
+
+                // Update UI with data for the currently selected currency, clear previous predictions
+                updateUI(allMarketData[selectedCurrency], null, null);
 
             } catch (error) {
                 console.error("Error fetching market data:", error);
                 const messageDiv = document.getElementById('recommended-vote-message');
-                messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
-                messageDiv.classList.remove('hidden');
-                document.getElementById('current-price-display').textContent = "$ERROR";
+                if (messageDiv) {
+                    messageDiv.innerHTML = `<div class="error-message">❌ Failed to load market data. Please ensure the backend server is running and accessible at ${BACKEND_API_URL}. Error: ${error.message}</div>`;
+                    messageDiv.classList.remove('hidden');
+                }
+                if (priceDisplay) priceDisplay.textContent = "$ERROR";
             } finally {
                 hideLoading('loading-spinner');
             }
@@ -1998,28 +2341,45 @@ if __name__ == "__main__":
             event.preventDefault();
 
             showLoading('prediction-spinner');
+            showLoading('gemini-vote-spinner');
+            const geminiAiVoteElem = document.getElementById('gemini-ai-vote');
+            const geminiAiReasoningElem = document.getElementById('gemini-ai-reasoning');
+            if(geminiAiVoteElem) geminiAiVoteElem.innerHTML = 'Loading...';
+            if(geminiAiReasoningElem) geminiAiReasoningElem.textContent = 'Generating AI analysis...';
+
             const targetPrice = parseFloat(document.getElementById('target-price').value);
             const targetTimeStr = document.getElementById('target-time').value;
             const selectedCurrencyForPrediction = document.querySelector('input[name="currency"]:checked').value;
 
             const messageDiv = document.getElementById('recommended-vote-message');
-            messageDiv.innerHTML = '';
-            messageDiv.classList.add('hidden');
-            document.getElementById('pro-tip-message').innerHTML = '';
+            if (messageDiv) {
+                messageDiv.innerHTML = '';
+                messageDiv.classList.add('hidden');
+            }
+            const proTipMessage = document.getElementById('pro-tip-message');
+            if (proTipMessage) proTipMessage.innerHTML = '';
+
 
             if (isNaN(targetPrice) || !targetTimeStr) {
-                messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
-                messageDiv.classList.remove('hidden');
+                if (messageDiv) {
+                    messageDiv.innerHTML = `<div class="error-message">❌ Please enter a valid target price and time.</div>`;
+                    messageDiv.classList.remove('hidden');
+                }
                 hideLoading('prediction-spinner');
+                hideLoading('gemini-vote-spinner');
+                if(geminiAiVoteElem) geminiAiVoteElem.innerHTML = 'N/A';
+                if(geminiAiReasoningElem) geminiAiReasoningElem.textContent = 'Invalid input for prediction.';
                 return;
             }
 
+            let prophetPredictionResult = null;
+            let geminiAiPredictionResult = null;
+
             try {
-                const response = await fetch(`${BACKEND_API_URL}/api/predict`, {
+                // 1. Get Prophet Prediction
+                const prophetResponse = await fetch(`${BACKEND_API_URL}/api/predict`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         target_price: targetPrice,
                         target_time: targetTimeStr,
@@ -2027,30 +2387,52 @@ if __name__ == "__main__":
                     })
                 });
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(`Prediction failed: ${errorData.error || response.statusText}`);
+                if (!prophetResponse.ok) {
+                    const errorData = await prophetResponse.json();
+                    throw new Error(`Prophet prediction failed: ${errorData.error || prophetResponse.statusText}`);
                 }
+                prophetPredictionResult = await prophetResponse.json();
 
-                const predictionResult = await response.json();
-                
-                // Re-fetch all market data to ensure the UI is consistent with the latest backend state
+                // 2. Get Gemini AI Prediction
+                const geminiAiResponse = await fetch(`${BACKEND_API_URL}/api/gemini_ai_vote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_price: targetPrice,
+                        target_time: targetTimeStr,
+                        currency: selectedCurrencyForPrediction
+                    })
+                });
+
+                if (!geminiAiResponse.ok) {
+                    const errorData = await geminiAiResponse.json();
+                    throw new Error(`Gemini AI prediction failed: ${errorData.error || geminiAiResponse.statusText}`);
+                }
+                geminiAiPredictionResult = await geminiAiResponse.json();
+
+
+                // 3. Re-fetch all market data to ensure the UI is consistent with the latest backend state
                 const marketDataResponse = await fetch(`${BACKEND_API_URL}/api/market_data`);
                 if (!marketDataResponse.ok) {
                     const errorData = await marketDataResponse.json();
                     throw new Error(`Failed to refresh market data after prediction: ${errorData.error || marketDataResponse.statusText}`);
                 }
                 allMarketData = await marketDataResponse.json();
-                
-                // Update UI with the prediction result for the *selected* currency
-                updateUI(allMarketData[selectedCurrency], predictionResult);
+
+                // Update UI with both prediction results for the *selected* currency
+                updateUI(allMarketData[selectedCurrency], prophetPredictionResult, geminiAiPredictionResult);
 
             } catch (error) {
                 console.error("Error during prediction:", error);
-                messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
-                messageDiv.classList.remove('hidden');
+                if (messageDiv) {
+                    messageDiv.innerHTML = `<div class="error-message">❌ ${error.message}</div>`;
+                    messageDiv.classList.remove('hidden');
+                }
+                if(geminiAiVoteElem) geminiAiVoteElem.innerHTML = 'ERROR';
+                if(geminiAiReasoningElem) geminiAiReasoningElem.textContent = `Failed to get AI prediction: ${error.message}`;
             } finally {
                 hideLoading('prediction-spinner');
+                hideLoading('gemini-vote-spinner');
             }
         });
 
@@ -2058,25 +2440,270 @@ if __name__ == "__main__":
         document.querySelectorAll('input[name="currency"]').forEach(radio => {
             radio.addEventListener('change', (event) => {
                 selectedCurrency = event.target.value;
-                // Update UI immediately with the newly selected currency's data
-                updateUI(allMarketData[selectedCurrency]);
+                // Update UI immediately with the newly selected currency's data, clearing old prediction results
+                updateUI(allMarketData[selectedCurrency], null, null);
             });
         });
+
+        // --- Chart resize on expand handler (NEW) ---
+        function setupExpanderWithPlotly(headerId, contentId, plotlyDivId) {
+            const header = document.getElementById(headerId);
+            const content = document.getElementById(contentId);
+            const arrow = header ? header.querySelector('.arrow') : null;
+
+            if (!header || !content || !arrow) return;
+
+            header.addEventListener('click', () => {
+                content.classList.toggle('expanded');
+                arrow.classList.toggle('expanded');
+                // If content is now expanded, trigger Plotly resize
+                if (content.classList.contains('expanded') && plotlyChartInstance && plotlyDivId) {
+                    setTimeout(() => Plotly.relayout(plotlyDivId, {autosize: true}), 500); // Allow animation to finish
+                }
+            });
+        }
+
+        // --- Chatbot Logic ---
+        const chatWindow = document.getElementById('chat-window'); // This is inside the potentially floating div
+        const chatInput = document.getElementById('chat-input');
+        const sendChatBtn = document.getElementById('send-chat-btn');
+        const chatSpinner = document.getElementById('chat-spinner');
+        const chatFileInput = document.getElementById('chat-file-input');
+        const uploadedFilesPreview = document.getElementById('uploaded-files-preview');
+        const chatErrorMessage = document.getElementById('chat-error-message');
+
+        let attachedFiles = [];
+
+        function addMessageToChat(sender, message, files = []) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('chat-message', sender);
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('chat-bubble', sender);
+            bubble.textContent = message;
+            messageDiv.appendChild(bubble);
+
+            files.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.classList.add('chat-file-preview');
+                    messageDiv.appendChild(img);
+                } else {
+                    const fileText = document.createElement('p');
+                    fileText.classList.add('text-sm', 'text-gray-400', 'mt-1');
+                    fileText.textContent = `Attached: ${file.name}`;
+                    messageDiv.appendChild(fileText);
+                }
+            });
+
+            chatWindow.appendChild(messageDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight; // Auto-scroll to bottom
+        }
+
+        async function sendChatMessage() {
+            const message = chatInput.value.trim();
+            chatErrorMessage.classList.add('hidden');
+
+            if (!message && attachedFiles.length === 0) {
+                chatErrorMessage.textContent = 'Please enter a message or select a file.';
+                chatErrorMessage.classList.remove('hidden');
+                return;
+            }
+
+            addMessageToChat('user', message, attachedFiles);
+            chatInput.value = ''; // Clear input
+            uploadedFilesPreview.innerHTML = ''; // Clear file previews
+
+            showLoading('chat-spinner');
+
+            try {
+                const formData = new FormData();
+                if (message) {
+                    formData.append('message', message);
+                }
+                attachedFiles.forEach((file) => {
+                    formData.append('files', file);
+                });
+
+                const response = await fetch(`${BACKEND_API_URL}/api/ai_chat`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Chatbot error: ${errorData.error || response.statusText}`);
+                }
+
+                const result = await response.json();
+                addMessageToChat('ai', result.ai_response);
+
+            } catch (error) {
+                console.error("Error sending chat message:", error);
+                chatErrorMessage.textContent = `❌ ${error.message}`;
+                chatErrorMessage.classList.remove('hidden');
+                addMessageToChat('ai', `Sorry, I encountered an error: ${error.message}`);
+            } finally {
+                hideLoading('chat-spinner');
+                attachedFiles = []; // Reset attached files after sending
+                chatFileInput.value = ''; // Clear file input element itself
+            }
+        }
+
+        sendChatBtn.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Prevent new line in textarea
+                sendChatMessage();
+            }
+        });
+
+        chatFileInput.addEventListener('change', (event) => {
+            uploadedFilesPreview.innerHTML = ''; // Clear previous previews
+            attachedFiles = Array.from(event.target.files);
+
+            attachedFiles.forEach((file, index) => {
+                const listItem = document.createElement('li');
+                listItem.classList.add('flex', 'justify-between', 'items-center', 'text-gold-300');
+                listItem.innerHTML = `
+                    <span><i class="fas fa-file mr-2"></i>${file.name}</span>
+                    <i class="fas fa-times-circle remove-file cursor-pointer" data-index="${index}"></i>
+                `;
+                uploadedFilesPreview.appendChild(listItem);
+            });
+
+            // Add event listeners for removing files
+            uploadedFilesPreview.querySelectorAll('.remove-file').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const indexToRemove = parseInt(e.target.dataset.index);
+                    attachedFiles.splice(indexToRemove, 1); // Remove from array
+                    e.target.closest('li').remove(); // Remove from UI
+                    // If no files are left, clear the actual file input element
+                    if (attachedFiles.length === 0) {
+                        chatFileInput.value = '';
+                    } else {
+                        // Re-render the list to update indices
+                        const tempFiles = Array.from(attachedFiles); // Copy to re-render
+                        attachedFiles = []; // Clear for re-population
+                        chatFileInput.files = null; // Clear native input
+                        // Manually trigger the change event with new files (tricky for FileList)
+                        // A simpler approach is just to update the preview list.
+                        const dataTransfer = new DataTransfer();
+                        tempFiles.forEach(file => dataTransfer.items.add(file));
+                        chatFileInput.files = dataTransfer.files;
+                        chatFileInput.dispatchEvent(new Event('change')); // Trigger re-render of preview
+                    }
+                });
+            });
+        });
+
 
         // Initialize the app when the DOM is fully loaded
         document.addEventListener('DOMContentLoaded', () => {
             initializeApp();
             updateCurrentISTTime(); // Set initial time
             setInterval(updateCurrentISTTime, 1000); // Update time every second
+
+            // Setup all expanders. Chart expander now explicitly handles Plotly resize.
+            setupExpander('prediction-summary-expander', 'prediction-summary-content');
+            setupExpander('technical-indicators-expander', 'technical-indicators-content');
+            setupExpanderWithPlotly('chart-expander', 'chart-content', 'candlestick-chart'); // Specific setup for chart
+            setupExpander('trust-signals-expander', 'trust-signals-content');
+            setupExpander('caution-flags-expander', 'caution-flags-content');
+            setupExpander('gemini-ai-vote-expander', 'gemini-ai-vote-content');
+
+            // Initialize chart on page load (it's expanded by default now)
+            // This call will be redundant after initialApp() is done, but safe.
+            // The actual data will be loaded by initializeApp.
+            // drawChart(allMarketData[selectedCurrency].chart_data); // Removed - initializeApp handles this now.
         });
 
         // Periodically update market data (e.g., every 1 minute for a more "real-time" feel)
         setInterval(initializeApp, 60000); // 60000 ms = 1 minute
 
+        // --- Floating Chatbot UI/Logic (NEW) ---
+        const floatingChatbotContainer = document.createElement('div');
+        floatingChatbotContainer.id = 'floating-chatbot-container';
+        floatingChatbotContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col items-end';
+        document.body.appendChild(floatingChatbotContainer);
+
+        const chatToggleBtn = document.createElement('button');
+        chatToggleBtn.id = 'chat-toggle-btn';
+        chatToggleBtn.innerHTML = '<i class="fas fa-comment"></i>'; // Initial icon
+        floatingChatbotContainer.appendChild(chatToggleBtn);
+
+        // Get the static chatbot section, then move its content
+        const staticChatbotSection = document.getElementById('static-ai-chatbot-section');
+        const chatbotContentMoved = staticChatbotSection.querySelector('#ai-chatbot-content');
+        const chatbotHeaderMoved = staticChatbotSection.querySelector('#ai-chatbot-expander');
+
+        // Hide the original static chatbot section from the main document flow
+        staticChatbotSection.style.display = 'none';
+
+        // Create a new container for the actual chatbot window that will be toggled
+        const floatingChatWindow = document.createElement('div');
+        floatingChatWindow.id = 'floating-chat-window-content';
+        floatingChatWindow.className = 'w-96 bg-gray-900 rounded-lg shadow-xl overflow-hidden transform scale-0 origin-bottom-right transition-all duration-300 ease-in-out hidden'; // Initially hidden and scaled down
+
+        floatingChatWindow.appendChild(chatbotHeaderMoved); // Move header to floating
+        floatingChatWindow.appendChild(chatbotContentMoved); // Move content to floating
+        floatingChatbotContainer.appendChild(floatingChatWindow);
+
+        let isChatOpen = false;
+
+        chatToggleBtn.addEventListener('click', () => {
+            isChatOpen = !isChatOpen;
+            if (isChatOpen) {
+                floatingChatWindow.classList.remove('hidden');
+                floatingChatWindow.classList.remove('scale-0');
+                floatingChatWindow.classList.add('scale-100');
+                chatToggleBtn.innerHTML = '<i class="fas fa-times"></i>'; // Change icon to 'X'
+                // Expand the content inside the floating window if it's not already
+                if (!chatbotContentMoved.classList.contains('expanded')) {
+                    chatbotContentMoved.classList.add('expanded');
+                    chatbotHeaderMoved.querySelector('.arrow').classList.add('expanded');
+                }
+                if (chatWindow) chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom on open
+            } else {
+                floatingChatWindow.classList.remove('scale-100');
+                floatingChatWindow.classList.add('scale-0');
+                // Use a transitionend event to hide the element completely after the animation
+                floatingChatWindow.addEventListener('transitionend', function handler() {
+                    if (!isChatOpen) { // Only hide after transition if still closed
+                        floatingChatWindow.classList.add('hidden');
+                    }
+                    floatingChatWindow.removeEventListener('transitionend', handler);
+                });
+                chatToggleBtn.innerHTML = '<i class="fas fa-comment"></i>'; // Change icon back to comment
+            }
+        });
+
+        // Re-setup the chatbot content as an expander *within* the floating window
+        // but ensure it's initially expanded when the floating window is shown.
+        document.addEventListener('DOMContentLoaded', () => {
+            const floatingChatbotContent = document.getElementById('ai-chatbot-content');
+            const floatingChatbotHeader = document.getElementById('ai-chatbot-expander');
+            const floatingChatbotArrow = floatingChatbotHeader ? floatingChatbotHeader.querySelector('.arrow') : null;
+
+            if (floatingChatbotContent && floatingChatbotHeader && floatingChatbotArrow) {
+                // The floating window itself will control visibility, so we ensure the internal content is always expanded
+                floatingChatbotContent.classList.add('expanded');
+                floatingChatbotArrow.classList.add('expanded'); // Make arrow point up by default for the internal content
+
+                // Keep the internal expander functionality, but it will control internal scroll height, not main window visibility.
+                floatingChatbotHeader.addEventListener('click', () => {
+                    floatingChatbotContent.classList.toggle('expanded');
+                    floatingChatbotArrow.classList.toggle('expanded');
+                    if (floatingChatbotContent.classList.contains('expanded') && chatWindow) {
+                        chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom when content expands
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>
-
 
 --- END FILE: index.html ---
 
@@ -2384,22 +3011,24 @@ Website Link : https://probo-crypto-predictor.netlify.app/
 
 --- START FILE: requirements.txt ---
 
-streamlit
 pandas
 requests
 plotly
 ta
 feedparser
 textblob
-urllib3
-python-telegram-bot==13.15
 flask
 flask-cors
 gunicorn
 pytz
 numpy
-scikit-learn # NEWLY ADDED
 prophet
+google-generativeai # For Gemini API
+Pillow # For image processing (though `google-generativeai` might handle basic bytes)
+# If you decide to implement full PDF/DOCX/XLSX parsing, you'll need:
+PyPDF2 # For PDF text extraction
+python-docx # For .docx text extraction
+openpyxl # For .xlsx text extraction
 
 --- END FILE: requirements.txt ---
 
@@ -2531,11 +3160,6 @@ if __name__ == "__main__":
 
 --- END FILE: telegram_bot.py ---
 
---------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------
 
-do the following : 
-
-remove the telegram bot feature entirely.
-make the predictions more accurate.
-improve the design and ui of the website.
-if a user connects their phone the website will scan their screen for probo real time data and will show its prediction on the mobile screen as a overlay above the probo application opened on phone right above the target deal.(can a feature like this be added to the website?)
+the view chart is not showing the chart why? fix that, it's showing a blank axis with indicators, no graphs there. improve the design of the floating ai chatbot. guide me through the deployment process, the frontend is deployed on netlify and the backend is on render.
